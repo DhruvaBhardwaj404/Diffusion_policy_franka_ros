@@ -1,0 +1,2 @@
+
+-DCATKIN_DEVEL_PREFIX=/home/prabhav/ssd_2tb/dhruv/DP_run_catkin/devel -DCMAKE_INSTALL_PREFIX=/home/prabhav/ssd_2tb/dhruv/DP_run_catkin/install -G Unix Makefiles
