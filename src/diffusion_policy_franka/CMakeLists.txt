@@ -8,9 +8,15 @@ project(diffusion_policy_franka)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  roscpp
+   roscpp
   rospy
   std_msgs
+  sensor_msgs
+  cv_bridge
+)
+
+catkin_package(
+  CATKIN_DEPENDS roscpp rospy std_msgs sensor_msgs cv_bridge
 )
 
 ## System dependencies are found with CMake's conventions
