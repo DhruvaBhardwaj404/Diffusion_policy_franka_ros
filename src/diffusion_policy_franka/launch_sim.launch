@@ -1,0 +1,80 @@
+<!-- ═══════════════════════════════════════════════════════════════════
+     Sim mode launch file
+     Runs: observation_node + eval_real + controller_node (sim)
+           + sim_node (feeds action chunks to drive the PyBullet arm)
+
+     Prerequisites (start manually before roslaunch):
+         launch_robot.py robot_client=bullet_sim gui=true
+
+     Usage:
+         roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
+             checkpoint_path:=/path/to/latest.ckpt
+═══════════════════════════════════════════════════════════════════ -->
+<launch>
+
+  <!-- ── args ──────────────────────────────────────────────────────── -->
+  <arg name="checkpoint_path"     default="/home/user/checkpoints/latest.ckpt"/>
+  <arg name="device"              default="cuda"/>
+  <arg name="num_inference_steps" default="10"/>
+  <arg name="n_obs_steps"         default="2"/>
+  <arg name="use_torch_compile"   default="false"/>
+
+  <!-- sim_node publishes fake action chunks directly —
+       bypasses observation + policy, just drives the PyBullet arm.
+       Comment this out if you want to test the full policy pipeline. -->
+  <arg name="use_sim_node"        default="true"/>
+
+  <!-- sim_node motion params -->
+  <arg name="amplitude"           default="0.03"/>   <!-- metres, 3cm is safe -->
+  <arg name="n_action_steps"      default="8"/>
+  <arg name="action_hz"           default="10.0"/>
+
+  <!-- ── sim_node (comment out to use full policy pipeline instead) ── -->
+  <group if="$(arg use_sim_node)">
+    <node name="sim_node"
+          pkg="diffusion_policy_franka"
+          type="sim_node.py"
+          output="screen">
+      <param name="action_hz"       value="$(arg action_hz)"/>
+      <param name="n_action_steps"  value="$(arg n_action_steps)"/>
+      <param name="amplitude"       value="$(arg amplitude)"/>
+    </node>
+  </group>
+
+  <!-- ── full policy pipeline (only active when use_sim_node=false) ── -->
+  <group unless="$(arg use_sim_node)">
+
+    <node name="observation_node"
+          pkg="diffusion_policy_franka"
+          type="observation_node.py"
+          output="screen">
+      <param name="n_obs_steps"  value="$(arg n_obs_steps)"/>
+      <param name="publish_hz"   value="$(arg action_hz)"/>
+      <!-- sim uses fake camera topics published by digital_twin_node -->
+      <param name="cam1_topic"   value="/sim/eih/color/image_raw"/>
+      <param name="cam2_topic"   value="/sim/ext/color/image_raw"/>
+    </node>
+
+    <node name="eval_real"
+          pkg="diffusion_policy_franka"
+          type="eval_real.py"
+          output="screen"
+          launch-prefix="taskset -c 4,5,6,7">
+      <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
+      <param name="device"              value="$(arg device)"/>
+      <param name="num_inference_steps" value="$(arg num_inference_steps)"/>
+      <param name="use_torch_compile"   value="$(arg use_torch_compile)"/>
+      <param name="n_obs_steps"         value="$(arg n_obs_steps)"/>
+    </node>
+
+  </group>
+
+  <!-- ── controller_node — always running in sim mode ─────────────── -->
+  <node name="controller_node"
+        pkg="diffusion_policy_franka"
+        type="controller_node.py"
+        output="screen"
+        args="--mode sim --interp_hz 50 --action_hz $(arg action_hz)">
+  </node>
+
+</launch>
