@@ -1,0 +1,8 @@
+prefix=/home/dhruv/Diffusion_policy_franka_ros/install
+
+Name: diffusion_policy_franka
+Description: Description of diffusion_policy_franka
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/dhruv/Diffusion_policy_franka_ros/devel/setup.sh

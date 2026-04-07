@@ -39,7 +39,7 @@ import torch
 import rospy
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension
 import sys
-sys.path.insert(0, '~/DiffusionPolicy')
+sys.path.insert(0, '/home/dhruv/Diffusion-Transformer')
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 

@@ -13,7 +13,7 @@
 <launch>
 
   <!-- ── args ──────────────────────────────────────────────────────── -->
-  <arg name="checkpoint_path"     default="/home/user/checkpoints/latest.ckpt"/>
+  <arg name="checkpoint_path"     default=" /home/dhruv/Diffusion-Transformer/data/outputs/2026.03.29/real_robot_8cm_red_cube/checkpoints/epoch=0800-val_loss=0.028.ckpt"/>
   <arg name="device"              default="cuda"/>
   <arg name="num_inference_steps" default="10"/>
   <arg name="n_obs_steps"         default="2"/>
