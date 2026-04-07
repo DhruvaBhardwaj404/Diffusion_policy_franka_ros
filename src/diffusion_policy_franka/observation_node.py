@@ -14,7 +14,7 @@ Topic mapping (from data collector):
     /franka_gripper/joint_states           → gripper_pos (2,)
 
 Preprocessing applied (matching data conversion script):
-    Images : bgr8 → resize 84x84 INTER_AREA → BGR2RGB → /255 → CHW float32
+    Images : rgb8 → resize 84x84 INTER_AREA → rgb2RGB → /255 → CHW float32
     EEF    : FK via roboticstoolbox Panda → normalize_eef_pos()
     Gripper: normalize_gripper() per finger
 
@@ -64,10 +64,10 @@ def normalize_gripper(gripper_pos: np.ndarray) -> np.ndarray:
 def preprocess_image(rgb_img: np.ndarray) -> np.ndarray:
     """
     Matches resize_images() in data conversion script exactly:
-      (H, W, 3) uint8 BGR  →  (3, 84, 84) float32 [0,1] RGB CHW
+      (H, W, 3) uint8 rgb  →  (3, 84, 84) float32 [0,1] RGB CHW
 
-    The data collector stores raw BGR from cv_bridge.
-    The conversion script does BGR→RGB before normalising.
+    The data collector stores raw rgb from cv_bridge.
+    The conversion script does rgb→RGB before normalising.
     So we must do the same here.
     """
     rgb = cv2.resize(rgb_img, (DESIRED_W, DESIRED_H),
@@ -115,8 +115,8 @@ class ObservationNode:
         rospy.loginfo("[ObsNode] FK model ready ✓")
 
         # ── latest snapshots (mirrors data collector pattern) ─────────────────
-        self.latest_image_1  = None   # (H, W, 3) uint8 BGR
-        self.latest_image_2  = None   # (H, W, 3) uint8 BGR
+        self.latest_image_1  = None   # (H, W, 3) uint8 rgb
+        self.latest_image_2  = None   # (H, W, 3) uint8 rgb
         self.latest_joints   = None   # (7,) float64
         self.latest_gripper  = None   # (2,) float64  per-finger positions
         self.snap_lock       = threading.Lock()
@@ -174,19 +174,19 @@ class ObservationNode:
 
     def cam1_callback(self, msg: Image):
         try:
-            bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            if bgr is not None and bgr.size > 0:
+            rgb = self.bridge.imgmsg_to_cv2(msg)
+            if rgb is not None and rgb.size > 0:
                 with self.snap_lock:
-                    self.latest_image_1 = np.array(bgr, dtype=np.uint8)
+                    self.latest_image_1 = np.array(rgb, dtype=np.uint8)
         except CvBridgeError as e:
             rospy.logerr(f"[ObsNode] cam1 error: {e}")
 
     def cam2_callback(self, msg: Image):
         try:
-            bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            if bgr is not None and bgr.size > 0:
+            rgb = self.bridge.imgmsg_to_cv2(msg)
+            if rgb is not None and rgb.size > 0:
                 with self.snap_lock:
-                    self.latest_image_2 = np.array(bgr, dtype=np.uint8)
+                    self.latest_image_2 = np.array(rgb, dtype=np.uint8)
         except CvBridgeError as e:
             rospy.logerr(f"[ObsNode] cam2 error: {e}")
 

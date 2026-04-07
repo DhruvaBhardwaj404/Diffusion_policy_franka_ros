@@ -1,35 +1,36 @@
 <!-- ═══════════════════════════════════════════════════════════════════
-     Sim mode launch file
-     Runs: observation_node + eval_real + controller_node (sim)
-           + sim_node (feeds action chunks to drive the PyBullet arm)
+     Sim mode — drives PyBullet arm via Polymetis
 
-     Prerequisites (start manually before roslaunch):
+     Start the sim server manually before roslaunch:
          launch_robot.py robot_client=bullet_sim gui=true
 
      Usage:
+         # Controller test only (no policy, no checkpoint needed):
+         roslaunch diffusion_policy_franka diffusion_policy_sim.launch
+
+         # Full pipeline (needs checkpoint + observation source):
          roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
+             use_sim_node:=false \
              checkpoint_path:=/path/to/latest.ckpt
 ═══════════════════════════════════════════════════════════════════ -->
 <launch>
 
   <!-- ── args ──────────────────────────────────────────────────────── -->
-  <arg name="checkpoint_path"     default=" /home/dhruv/Diffusion-Transformer/data/outputs/2026.03.29/real_robot_8cm_red_cube/checkpoints/epoch=0800-val_loss=0.028.ckpt"/>
-  <arg name="device"              default="cuda"/>
+  <arg name="checkpoint_path"     default="/tmp/latest.ckpt"/>
+  <arg name="device"              default="cuda:0"/>
   <arg name="num_inference_steps" default="10"/>
   <arg name="n_obs_steps"         default="2"/>
-  <arg name="use_torch_compile"   default="false"/>
+  <arg name="output_dir"          default="/tmp/eval_real_output"/>
+  <arg name="action_hz"           default="10.0"/>
+  <arg name="interp_hz"           default="50.0"/>   <!-- lower for sim -->
+  <arg name="amplitude"           default="0.03"/>
+  <arg name="n_action_steps"      default="8"/>
 
-  <!-- sim_node publishes fake action chunks directly —
-       bypasses observation + policy, just drives the PyBullet arm.
-       Comment this out if you want to test the full policy pipeline. -->
+  <!-- set false to run full policy pipeline instead of sim_node -->
   <arg name="use_sim_node"        default="true"/>
 
-  <!-- sim_node motion params -->
-  <arg name="amplitude"           default="0.03"/>   <!-- metres, 3cm is safe -->
-  <arg name="n_action_steps"      default="8"/>
-  <arg name="action_hz"           default="10.0"/>
-
-  <!-- ── sim_node (comment out to use full policy pipeline instead) ── -->
+  <!-- ── sim_node: feeds fake action chunks directly ───────────────── -->
+  <!-- active when use_sim_node=true — bypasses observation + policy   -->
   <group if="$(arg use_sim_node)">
     <node name="sim_node"
           pkg="diffusion_policy_franka"
@@ -41,18 +42,19 @@
     </node>
   </group>
 
-  <!-- ── full policy pipeline (only active when use_sim_node=false) ── -->
+  <!-- ── full policy pipeline ──────────────────────────────────────── -->
+  <!-- active when use_sim_node=false                                  -->
   <group unless="$(arg use_sim_node)">
 
     <node name="observation_node"
           pkg="diffusion_policy_franka"
           type="observation_node.py"
           output="screen">
-      <param name="n_obs_steps"  value="$(arg n_obs_steps)"/>
-      <param name="publish_hz"   value="$(arg action_hz)"/>
-      <!-- sim uses fake camera topics published by digital_twin_node -->
-      <param name="cam1_topic"   value="/sim/eih/color/image_raw"/>
-      <param name="cam2_topic"   value="/sim/ext/color/image_raw"/>
+      <param name="n_obs_steps" value="$(arg n_obs_steps)"/>
+      <param name="publish_hz"  value="$(arg action_hz)"/>
+      <!-- sim publishes on /sim/ topics from digital_twin_node -->
+      <param name="cam1_topic"  value="/sim/eih/color/image_raw"/>
+      <param name="cam2_topic"  value="/sim/ext/color/image_raw"/>
     </node>
 
     <node name="eval_real"
@@ -63,18 +65,21 @@
       <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
       <param name="device"              value="$(arg device)"/>
       <param name="num_inference_steps" value="$(arg num_inference_steps)"/>
-      <param name="use_torch_compile"   value="$(arg use_torch_compile)"/>
       <param name="n_obs_steps"         value="$(arg n_obs_steps)"/>
+      <param name="output_dir"          value="$(arg output_dir)"/>
     </node>
 
   </group>
 
-  <!-- ── controller_node — always running in sim mode ─────────────── -->
+  <!-- ── controller_node — always running ──────────────────────────── -->
   <node name="controller_node"
         pkg="diffusion_policy_franka"
         type="controller_node.py"
-        output="screen"
-        args="--mode sim --interp_hz 50 --action_hz $(arg action_hz)">
+        output="screen">
+    <param name="mode"      value="sim"/>
+    <param name="action_hz" value="$(arg action_hz)"/>
+    <param name="interp_hz" value="$(arg interp_hz)"/>
+    <!-- robot_ip not needed for sim — uses localhost -->
   </node>
 
 </launch>

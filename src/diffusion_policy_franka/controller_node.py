@@ -2,43 +2,39 @@
 """
 controller_node.py  (Polymetis version — hardware + sim modes)
 ---------------------------------------------------------------
-Two modes via --mode flag:
+Reads all configuration from ROS params so it works with both
+diffusion_policy_sim.launch and diffusion_policy_real.launch.
 
-  hardware  : connects to Polymetis server on RT machine over network
-              RT machine must be running:
-                launch_robot.py robot_client=franka_hardware ...
-                launch_gripper.py gripper=franka_hand
+ROS params (set by launch file):
+    ~mode           sim | hardware         (required)
+    ~robot_ip       RT machine IP          (required for hardware mode)
+    ~action_hz      action rate Hz         (default: 10.0)
+    ~interp_hz      interpolation Hz       (default: 200.0 hw / 50.0 sim)
+    ~max_pos_speed  max EEF speed m/s      (default: 0.25)
+    ~max_rot_speed  max rot speed rad/s    (default: 0.6)
+    ~verbose        bool                   (default: false)
 
-  sim       : connects to Polymetis PyBullet sim server on localhost
-              Start the sim server first (on this machine):
-                launch_robot.py robot_client=bullet_sim gui=true
-              Gripper is stubbed — polysim does not support gripper simulation.
+Two modes:
+    sim      : connects to Polymetis bullet_sim on localhost
+               Start first: launch_robot.py robot_client=bullet_sim gui=true
+               Gripper is stubbed (polysim does not support it)
 
-The RobotInterface API is identical in both modes — only the IP and
-gripper behaviour differ. Everything else (interpolator, queue, ROS
-subscriber) is exactly the same.
-
-Usage:
-    # simulation (no RT machine needed)
-    launch_robot.py robot_client=bullet_sim gui=true   # separate terminal
-    python controller_node.py --mode sim
-
-    # hardware
-    python controller_node.py --mode hardware --robot_ip <rt_machine_ip>
+    hardware : connects to Polymetis server on RT machine
+               Start first on RT machine:
+                   launch_robot.py robot_client=franka_hardware ...
+                   launch_gripper.py gripper=franka_hand
 """
 
-import argparse
 import enum
 import multiprocessing as mp
 import time
 import threading
+import sys
 
 import numpy as np
 import rospy
 from scipy.spatial.transform import Rotation
 from std_msgs.msg import Float64MultiArray
-import sys
-sys.path.insert(0, '/home/dhruv/Diffusion-Transformer')
 
 from polymetis import RobotInterface
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
@@ -63,9 +59,9 @@ def unnormalize_eef_pos(norm_pos: np.ndarray) -> np.ndarray:
 
 
 def actions_to_poses(actions: np.ndarray) -> np.ndarray:
-    """(N,7) action → (N,7) pose  [xyz | xyzw quat]"""
-    real_pos  = unnormalize_eef_pos(actions[:, :3])
-    quats     = Rotation.from_euler('xyz', actions[:, 3:6]).as_quat()  # xyzw
+    """(N, 7) action → (N, 7) pose  [xyz | xyzw quat]"""
+    real_pos = unnormalize_eef_pos(actions[:, :3])
+    quats    = Rotation.from_euler('xyz', actions[:, 3:6]).as_quat()  # xyzw
     return np.concatenate([real_pos, quats], axis=1)
 
 
@@ -79,8 +75,6 @@ class Command(enum.Enum):
 # ── Gripper abstraction ───────────────────────────────────────────────────────
 
 class HardwareGripper:
-    """Real Franka gripper via Polymetis GripperInterface."""
-
     def __init__(self, robot_ip: str):
         from polymetis import GripperInterface
         print(f"[Gripper] Connecting to {robot_ip} ...")
@@ -108,14 +102,9 @@ class HardwareGripper:
 
 
 class SimGripper:
-    """
-    Stub gripper for sim mode.
-    polysim does not support gripper simulation, so we just log commands.
-    """
-
     def __init__(self):
         self.is_closed = False
-        print("[Gripper] Sim mode — gripper commands will be logged only.")
+        print("[Gripper] Sim mode — gripper commands logged only.")
 
     def command(self, state: int):
         if state == 0 and not self.is_closed:
@@ -130,21 +119,14 @@ class SimGripper:
 
 class FrankaController(mp.Process):
     """
-    Owns the Polymetis RobotInterface and runs PoseTrajectoryInterpolator
-    at interp_hz in its own process (escapes Python GIL).
-
-    Identical for both hardware and sim — only robot_ip differs:
-        hardware : IP of RT machine
-        sim      : "localhost"
+    Separate process — owns the Polymetis RobotInterface and runs
+    PoseTrajectoryInterpolator at interp_hz. Escapes Python GIL.
+    Identical for sim and hardware — only robot_ip differs.
     """
 
-    def __init__(self,
-                 command_queue: mp.Queue,
-                 robot_ip: str,
-                 interp_hz: float   = 200.0,
-                 max_pos_speed: float = 0.25,
-                 max_rot_speed: float = 0.6,
-                 verbose: bool      = False):
+    def __init__(self, command_queue: mp.Queue, robot_ip: str,
+                 interp_hz: float = 200.0, max_pos_speed: float = 0.25,
+                 max_rot_speed: float = 0.6, verbose: bool = False):
         super().__init__(daemon=True)
         self.command_queue = command_queue
         self.robot_ip      = robot_ip
@@ -164,10 +146,9 @@ class FrankaController(mp.Process):
         # seed interpolator from current EEF pose
         state  = robot.get_ee_pose()
         pos0   = state[0].numpy()
-        # Polymetis returns wxyz → convert to xyzw for interpolator
         q_wxyz = state[1].numpy()
         q_xyzw = np.array([q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]])
-        pose0  = np.concatenate([pos0, q_xyzw])   # (7,)
+        pose0  = np.concatenate([pos0, q_xyzw])
         t0     = time.monotonic()
 
         interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
@@ -179,7 +160,7 @@ class FrankaController(mp.Process):
         while True:
             t_now = time.monotonic()
 
-            # ── drain command queue ───────────────────────────────────────────
+            # drain command queue
             while not self.command_queue.empty():
                 try:
                     cmd = self.command_queue.get_nowait()
@@ -191,13 +172,9 @@ class FrankaController(mp.Process):
                     return
 
                 elif cmd['cmd'] == Command.SCHEDULE_WAYPOINT.value:
-                    target_pose = np.array(cmd['pose'])   # (7,) xyzw
-                    target_time = float(cmd['time'])       # wall-clock
-
-                    # wall-clock → monotonic  (same trick as RTDE version)
-                    target_time_mono = (
-                        time.monotonic() - time.time() + target_time
-                    )
+                    target_pose      = np.array(cmd['pose'])
+                    target_time      = float(cmd['time'])
+                    target_time_mono = time.monotonic() - time.time() + target_time
 
                     interp = interp.schedule_waypoint(
                         pose=target_pose,
@@ -208,15 +185,14 @@ class FrankaController(mp.Process):
                         last_waypoint_time=t_now,
                     )
 
-            # ── interpolate → send ────────────────────────────────────────────
-            pose_now  = interp(t_now)          # (7,) xyzw
-            pos       = pose_now[:3]
-            q_xyzw    = pose_now[3:]
-            # Polymetis expects wxyz
-            q_wxyz    = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
+            # interpolate and send to robot
+            pose_now = interp(t_now)
+            pos      = pose_now[:3]
+            q_xyzw   = pose_now[3:]
+            q_wxyz   = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
 
             robot.move_to_ee_pose(
-                position=torch.tensor(pos,    dtype=torch.float32),
+                position=torch.tensor(pos,     dtype=torch.float32),
                 orientation=torch.tensor(q_wxyz, dtype=torch.float32),
                 time_to_go=dt * 2,
             )
@@ -224,7 +200,6 @@ class FrankaController(mp.Process):
             if self.verbose:
                 print(f"[FrankaController] pos={np.round(pos, 4)}")
 
-            # ── precise sleep ─────────────────────────────────────────────────
             elapsed = time.monotonic() - t_now
             time.sleep(max(0.0, dt - elapsed))
 
@@ -233,22 +208,41 @@ class FrankaController(mp.Process):
 
 class ControllerNode:
 
-    def __init__(self, mode: str, robot_ip: str,
-                 action_hz: float, interp_hz: float,
-                 max_pos_speed: float, max_rot_speed: float,
-                 verbose: bool):
+    def __init__(self):
+        # ── init ROS first so we can read params ──────────────────────────────
+        rospy.init_node("controller_node", anonymous=False)
+
+        # ── read all params from launch file ──────────────────────────────────
+        mode          = rospy.get_param("~mode",           "sim")
+        robot_ip      = rospy.get_param("~robot_ip",       "")
+        action_hz     = rospy.get_param("~action_hz",      10.0)
+        interp_hz     = rospy.get_param("~interp_hz",      50.0 if mode == "sim" else 200.0)
+        max_pos_speed = rospy.get_param("~max_pos_speed",  0.25)
+        max_rot_speed = rospy.get_param("~max_rot_speed",  0.6)
+        verbose       = rospy.get_param("~verbose",        False)
 
         self.action_hz = action_hz
 
-        # ── resolve robot IP based on mode ────────────────────────────────────
+        rospy.loginfo(
+            f"[ControllerNode] Config\n"
+            f"  mode          : {mode}\n"
+            f"  robot_ip      : {robot_ip if robot_ip else 'localhost (sim)'}\n"
+            f"  action_hz     : {action_hz}\n"
+            f"  interp_hz     : {interp_hz}\n"
+            f"  max_pos_speed : {max_pos_speed} m/s\n"
+            f"  max_rot_speed : {max_rot_speed} rad/s\n"
+        )
+
+        # ── resolve IP ────────────────────────────────────────────────────────
         if mode == "sim":
             effective_ip = "localhost"
-            print("[ControllerNode] Mode: SIM  (connecting to localhost)")
+            rospy.loginfo("[ControllerNode] Mode: SIM → localhost")
         else:
             if not robot_ip:
-                raise ValueError("--robot_ip is required for hardware mode")
+                rospy.logfatal("[ControllerNode] hardware mode requires ~robot_ip param")
+                raise ValueError("~robot_ip is required for hardware mode")
             effective_ip = robot_ip
-            print(f"[ControllerNode] Mode: HARDWARE  (robot_ip={robot_ip})")
+            rospy.loginfo(f"[ControllerNode] Mode: HARDWARE → {robot_ip}")
 
         # ── start controller process ──────────────────────────────────────────
         self.command_queue = mp.Queue(maxsize=256)
@@ -262,9 +256,9 @@ class ControllerNode:
             verbose=verbose,
         )
         self.franka.start()
-        print("[ControllerNode] Waiting for FrankaController ...")
+        rospy.loginfo("[ControllerNode] Waiting for FrankaController ...")
         self.franka.ready_event.wait()
-        print("[ControllerNode] FrankaController ready ✓")
+        rospy.loginfo("[ControllerNode] FrankaController ready ✓")
 
         # ── gripper ───────────────────────────────────────────────────────────
         if mode == "sim":
@@ -272,9 +266,7 @@ class ControllerNode:
         else:
             self.gripper = HardwareGripper(robot_ip=robot_ip)
 
-        # ── ROS ───────────────────────────────────────────────────────────────
-        rospy.init_node("controller_node", anonymous=False)
-
+        # ── subscriber ────────────────────────────────────────────────────────
         rospy.Subscriber(
             "/diffusion_policy/action_chunk",
             Float64MultiArray,
@@ -283,8 +275,6 @@ class ControllerNode:
         )
 
         rospy.loginfo("[ControllerNode] Ready — waiting for action chunks.")
-
-    # ── callbacks ─────────────────────────────────────────────────────────────
 
     def _action_callback(self, msg: Float64MultiArray):
         dims       = msg.layout.dim
@@ -304,14 +294,13 @@ class ControllerNode:
 
     def _schedule_chunk(self, actions: np.ndarray):
         n_steps    = len(actions)
-        poses      = actions_to_poses(actions)   # (N, 7)
-        gripper    = actions[:, 6]               # (N,)
+        poses      = actions_to_poses(actions)
+        gripper    = actions[:, 6]
 
         t_start    = time.time()
         dt         = 1.0 / self.action_hz
         timestamps = t_start + np.arange(n_steps) * dt
 
-        # enqueue waypoints — non-blocking
         for i in range(n_steps):
             self.command_queue.put({
                 'cmd':  Command.SCHEDULE_WAYPOINT.value,
@@ -319,7 +308,6 @@ class ControllerNode:
                 'time': float(timestamps[i]),
             })
 
-        # gripper sync at action_hz
         rate = rospy.Rate(self.action_hz)
         for i in range(n_steps):
             if rospy.is_shutdown():
@@ -336,37 +324,10 @@ class ControllerNode:
         self.franka.join(timeout=3.0)
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Diffusion policy controller node (Polymetis)")
-    parser.add_argument(
-        "--mode", choices=["hardware", "sim"], required=True,
-        help="hardware: real Franka via RT machine | sim: local PyBullet")
-    parser.add_argument(
-        "--robot_ip", default=None,
-        help="IP of RT machine (required for hardware mode)")
-    parser.add_argument("--action_hz",     type=float, default=10.0)
-    parser.add_argument("--interp_hz",     type=float, default=200.0,
-                        help="Interpolation Hz (use 50 for sim, 200 for hardware)")
-    parser.add_argument("--max_pos_speed", type=float, default=0.25,
-                        help="Max EEF translation speed m/s")
-    parser.add_argument("--max_rot_speed", type=float, default=0.6,
-                        help="Max EEF rotation speed rad/s")
-    parser.add_argument("--verbose",       action="store_true")
-    args = parser.parse_args()
-
-    node = ControllerNode(
-        mode=args.mode,
-        robot_ip=args.robot_ip,
-        action_hz=args.action_hz,
-        interp_hz=args.interp_hz,
-        max_pos_speed=args.max_pos_speed,
-        max_rot_speed=args.max_rot_speed,
-        verbose=args.verbose,
-    )
-
+    node = ControllerNode()
     try:
         node.spin()
     except KeyboardInterrupt:

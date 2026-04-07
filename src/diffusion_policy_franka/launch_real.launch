@@ -1,49 +1,47 @@
 <!-- ═══════════════════════════════════════════════════════════════════
-     Real robot launch file
-     Runs: observation_node + eval_real + controller_node (hardware)
+     Real robot mode — full pipeline on real Franka via Polymetis
 
-     Prerequisites (start manually before roslaunch):
-         On RT machine:
-             launch_robot.py robot_client=franka_hardware \
-                 robot_client.executable_cfg.robot_ip=<franka_ip>
-             launch_gripper.py gripper=franka_hand
+     Start on RT machine before roslaunch:
+         launch_robot.py robot_client=franka_hardware \
+             robot_client.executable_cfg.robot_ip=<franka_ip>
+         launch_gripper.py gripper=franka_hand
 
      Usage:
          roslaunch diffusion_policy_franka diffusion_policy_real.launch \
              checkpoint_path:=/path/to/latest.ckpt \
-             robot_ip:=<rt_machine_ip>
+             robot_ip:=192.168.1.100
 ═══════════════════════════════════════════════════════════════════ -->
 <launch>
 
   <!-- ── args ──────────────────────────────────────────────────────── -->
-  <arg name="checkpoint_path"     default="/home/user/checkpoints/latest.ckpt"/>
-  <arg name="device"              default="cuda"/>
+  <arg name="checkpoint_path"     default="/tmp/latest.ckpt"/>
+  <arg name="device"              default="cuda:0"/>
   <arg name="num_inference_steps" default="10"/>
   <arg name="n_obs_steps"         default="2"/>
-  <arg name="use_torch_compile"   default="false"/>
+  <arg name="output_dir"          default="/tmp/eval_real_output"/>
   <arg name="action_hz"           default="10.0"/>
+  <arg name="interp_hz"           default="200.0"/>
 
-  <!-- RT machine IP — required -->
-  <arg name="robot_ip"            default=""/>
+  <!-- RT machine IP — always required for hardware mode -->
+  <arg name="robot_ip"/>
 
-  <!-- camera topics — must match data collector params exactly -->
-  <arg name="cam1_topic"          default="/eih/color/image_raw"/>  <!-- wrist -->
-  <arg name="cam2_topic"          default="/ext/color/image_raw"/>  <!-- external -->
+  <!-- camera topics — must match data collector exactly -->
+  <arg name="cam1_topic"          default="/eih/color/image_raw"/>
+  <arg name="cam2_topic"          default="/ext/color/image_raw"/>
 
-  <!-- controller speed limits — tune conservatively first -->
-  <arg name="max_pos_speed"       default="0.25"/>  <!-- m/s -->
-  <arg name="max_rot_speed"       default="0.6"/>   <!-- rad/s -->
-  <arg name="interp_hz"           default="200.0"/> <!-- interpolation rate -->
+  <!-- speed limits — start conservative -->
+  <arg name="max_pos_speed"       default="0.25"/>
+  <arg name="max_rot_speed"       default="0.6"/>
 
   <!-- ── observation_node ──────────────────────────────────────────── -->
   <node name="observation_node"
         pkg="diffusion_policy_franka"
         type="observation_node.py"
         output="screen">
-    <param name="n_obs_steps"  value="$(arg n_obs_steps)"/>
-    <param name="publish_hz"   value="$(arg action_hz)"/>
-    <param name="cam1_topic"   value="$(arg cam1_topic)"/>
-    <param name="cam2_topic"   value="$(arg cam2_topic)"/>
+    <param name="n_obs_steps" value="$(arg n_obs_steps)"/>
+    <param name="publish_hz"  value="$(arg action_hz)"/>
+    <param name="cam1_topic"  value="$(arg cam1_topic)"/>
+    <param name="cam2_topic"  value="$(arg cam2_topic)"/>
   </node>
 
   <!-- ── eval_real (policy inference) ─────────────────────────────── -->
@@ -56,21 +54,21 @@
     <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
     <param name="device"              value="$(arg device)"/>
     <param name="num_inference_steps" value="$(arg num_inference_steps)"/>
-    <param name="use_torch_compile"   value="$(arg use_torch_compile)"/>
     <param name="n_obs_steps"         value="$(arg n_obs_steps)"/>
+    <param name="output_dir"          value="$(arg output_dir)"/>
   </node>
 
   <!-- ── controller_node ───────────────────────────────────────────── -->
   <node name="controller_node"
         pkg="diffusion_policy_franka"
         type="controller_node.py"
-        output="screen"
-        args="--mode hardware
-              --robot_ip $(arg robot_ip)
-              --action_hz $(arg action_hz)
-              --interp_hz $(arg interp_hz)
-              --max_pos_speed $(arg max_pos_speed)
-              --max_rot_speed $(arg max_rot_speed)">
+        output="screen">
+    <param name="mode"          value="hardware"/>
+    <param name="robot_ip"      value="$(arg robot_ip)"/>
+    <param name="action_hz"     value="$(arg action_hz)"/>
+    <param name="interp_hz"     value="$(arg interp_hz)"/>
+    <param name="max_pos_speed" value="$(arg max_pos_speed)"/>
+    <param name="max_rot_speed" value="$(arg max_rot_speed)"/>
   </node>
 
 </launch>
