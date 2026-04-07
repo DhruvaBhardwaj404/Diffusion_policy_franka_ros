@@ -121,7 +121,7 @@ def main():
                         help="Sine amplitude in metres (default 0.03 = 3cm)")
     parser.add_argument("--verbose",        action="store_true",
                         help="Print each chunk")
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
     rospy.init_node("sim_node", anonymous=False)
 
