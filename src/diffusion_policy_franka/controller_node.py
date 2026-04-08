@@ -140,72 +140,80 @@ class FrankaController(mp.Process):
             print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
             robot.go_home()
-            # ... rest of existing code ...
+
+            # seed interpolator from current EEF pose
+            state = robot.get_ee_pose()
+            pos0 = state[0].numpy()
+            q_wxyz = state[1].numpy()
+            q_xyzw = np.array([q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]])
+
+            # PoseTrajectoryInterpolator expects (xyz + rotvec) — 6DOF
+            rotvec0 = Rotation.from_quat(q_xyzw).as_rotvec()
+            pose0 = np.concatenate([pos0, rotvec0])  # (6,)
+            t0 = time.monotonic()
+
+            interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
+
+            dt = 1.0 / self.interp_hz
+            self.ready_event.set()
+            print(f"[FrankaController] Running at {self.interp_hz} Hz")
+
+            while True:
+                t_now = time.monotonic()
+
+                while not self.command_queue.empty():
+                    try:
+                        cmd = self.command_queue.get_nowait()
+                    except Exception:
+                        break
+
+                    if cmd['cmd'] == Command.STOP.value:
+                        print("[FrankaController] STOP — exiting.")
+                        return
+
+                    elif cmd['cmd'] == Command.SCHEDULE_WAYPOINT.value:
+                        target_pose = np.array(cmd['pose'])  # (7,) xyz+xyzw
+                        target_time = float(cmd['time'])
+                        target_time_mono = time.monotonic() - time.time() + target_time
+
+                        # convert quat → rotvec for interpolator
+                        t_pos = target_pose[:3]
+                        t_rotvec = Rotation.from_quat(target_pose[3:]).as_rotvec()
+                        t_pose6 = np.concatenate([t_pos, t_rotvec])  # (6,)
+
+                        interp = interp.schedule_waypoint(
+                            pose=t_pose6,
+                            time=target_time_mono,
+                            max_pos_speed=self.max_pos_speed,
+                            max_rot_speed=self.max_rot_speed,
+                            curr_time=t_now,
+                            last_waypoint_time=t_now,
+                        )
+
+                # interpolate and send to robot
+                pose_now = interp(t_now)  # (6,) xyz + rotvec
+                pos = pose_now[:3]
+                rotvec = pose_now[3:]
+                q_xyzw = Rotation.from_rotvec(rotvec).as_quat()
+                q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
+
+                robot.move_to_ee_pose(
+                    position=torch.tensor(pos, dtype=torch.float32),
+                    orientation=torch.tensor(q_wxyz, dtype=torch.float32),
+                    time_to_go=dt * 2,
+                )
+
+                if self.verbose:
+                    print(f"[FrankaController] pos={np.round(pos, 4)}")
+
+                elapsed = time.monotonic() - t_now
+                time.sleep(max(0.0, dt - elapsed))
+
         except Exception as e:
             print(f"[FrankaController] CRASHED: {e}")
             import traceback
             traceback.print_exc()
             self.ready_event.set()
-
-        # seed interpolator from current EEF pose
-        state  = robot.get_ee_pose()
-        pos0   = state[0].numpy()
-        q_wxyz = state[1].numpy()
-        q_xyzw = np.array([q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]])
-        pose0  = np.concatenate([pos0, q_xyzw])
-        t0     = time.monotonic()
-
-        interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
-
-        dt = 1.0 / self.interp_hz
-        self.ready_event.set()
-        print(f"[FrankaController] Running at {self.interp_hz} Hz")
-
-        while True:
-            t_now = time.monotonic()
-
-            # drain command queue
-            while not self.command_queue.empty():
-                try:
-                    cmd = self.command_queue.get_nowait()
-                except Exception:
-                    break
-
-                if cmd['cmd'] == Command.STOP.value:
-                    print("[FrankaController] STOP — exiting.")
-                    return
-
-                elif cmd['cmd'] == Command.SCHEDULE_WAYPOINT.value:
-                    target_pose      = np.array(cmd['pose'])
-                    target_time      = float(cmd['time'])
-                    target_time_mono = time.monotonic() - time.time() + target_time
-
-                    interp = interp.schedule_waypoint(
-                        pose=target_pose,
-                        time=target_time_mono,
-                        max_pos_speed=self.max_pos_speed,
-                        max_rot_speed=self.max_rot_speed,
-                        curr_time=t_now,
-                        last_waypoint_time=t_now,
-                    )
-
-            # interpolate and send to robot
-            pose_now = interp(t_now)
-            pos      = pose_now[:3]
-            q_xyzw   = pose_now[3:]
-            q_wxyz   = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
-
-            robot.move_to_ee_pose(
-                position=torch.tensor(pos,     dtype=torch.float32),
-                orientation=torch.tensor(q_wxyz, dtype=torch.float32),
-                time_to_go=dt * 2,
-            )
-
-            if self.verbose:
-                print(f"[FrankaController] pos={np.round(pos, 4)}")
-
-            elapsed = time.monotonic() - t_now
-            time.sleep(max(0.0, dt - elapsed))
 
 
 # ── ROS controller node ───────────────────────────────────────────────────────
