@@ -161,7 +161,8 @@ class RealRobotRunner:
             rospy.loginfo(
                 f"[EvalReal] chunk {self.chunks_published:4d} | "
                 f"inference {elapsed:6.1f} ms | "
-                f"actions {actions.shape}"
+                f"actions {actions.shape}",
+                f"actions:\n{np.round(actions, 4)}"
             )
 
         except Exception as e:
