@@ -5,15 +5,14 @@
          launch_robot.py robot_client=bullet_sim gui=true
 
      Usage:
-         # HDF5 demo replay → full policy pipeline:
+         # NPZ demo replay → full policy pipeline:
          roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
-             hdf5_path:=/path/to/demo.hdf5 \
+             npz_path:=/path/to/demo.npz \
              checkpoint_path:=/path/to/latest.ckpt
 
-         # HDF5 replay, specific demo, looping:
+         # NPZ replay, looping:
          roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
-             hdf5_path:=/path/to/demo.hdf5 \
-             demo_idx:=2 \
+             npz_path:=/path/to/demo.npz \
              loop:=true \
              checkpoint_path:=/path/to/latest.ckpt
 
@@ -33,25 +32,21 @@
   <arg name="action_hz"           default="10.0"/>
   <arg name="interp_hz"           default="50.0"/>
 
-  <!-- sim_node HDF5 replay args -->
-  <arg name="hdf5_path"           default=""/>       <!-- required if use_sim_node=true -->
-  <arg name="demo_idx"            default="0"/>
+  <!-- sim_node NPZ replay args -->
+  <arg name="npz_path"            default=""/>       <!-- required if use_sim_node=true -->
   <arg name="loop"                default="false"/>
 
   <!-- set false if using a digital twin or other live image source -->
   <arg name="use_sim_node"        default="true"/>
 
-  <!-- ── sim_node: replays raw sensor data from HDF5 onto sensor topics ── -->
+  <!-- ── sim_node: replays raw sensor data from NPZ onto sensor topics ── -->
   <!-- observation_node subscribes to these same topics and preprocesses  -->
   <group if="$(arg use_sim_node)">
     <node name="sim_node"
           pkg="diffusion_policy_franka"
           type="sim_node.py"
-          output="screen">
-      <param name="hdf5_path"   value="$(arg hdf5_path)"/>
-      <param name="demo_idx"    value="$(arg demo_idx)"/>
-      <param name="replay_hz"   value="$(arg action_hz)"/>
-      <param name="loop"        value="$(arg loop)"/>
+          output="screen"
+          args="--npz $(arg npz_path) --replay_hz $(arg action_hz) $(eval '--loop' if arg('loop') == 'true' else '')">
       <!-- topics must match observation_node's cam1/cam2 params below -->
       <param name="cam1_topic"    value="/eih/color/image_raw"/>
       <param name="cam2_topic"    value="/ext/color/image_raw"/>
