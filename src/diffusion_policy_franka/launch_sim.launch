@@ -24,12 +24,10 @@
 <launch>
 
   <!-- ── args ──────────────────────────────────────────────────────── -->
-  <arg name="checkpoint_path"     default="/tmp/latest.ckpt"/>
-  <arg name="device"              default="cuda:0"/>
   <arg name="output_dir"          default="/tmp/eval_real_output"/>
   <arg name="action_hz"           default="10.0"/>
   <arg name="interp_hz"           default="50.0"/>
-
+  <arg name="n_obs_steps"           default="2"/>
   <!-- sim_node NPZ replay args -->
   <arg name="npz_path"            default=""/>       <!-- required if use_sim_node=true -->
   <arg name="loop"                default="false"/>
