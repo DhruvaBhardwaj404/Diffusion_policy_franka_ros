@@ -136,10 +136,16 @@ class FrankaController(mp.Process):
         self.ready_event   = mp.Event()
 
     def run(self):
-
-        print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
-        robot = RobotInterface(ip_address=self.robot_ip)
-        robot.go_home()
+        try:
+            print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
+            robot = RobotInterface(ip_address=self.robot_ip)
+            robot.go_home()
+            # ... rest of existing code ...
+        except Exception as e:
+            print(f"[FrankaController] CRASHED: {e}")
+            import traceback
+            traceback.print_exc()
+            self.ready_event.set()
 
         # seed interpolator from current EEF pose
         state  = robot.get_ee_pose()
@@ -275,25 +281,30 @@ class ControllerNode:
         rospy.loginfo("[ControllerNode] Ready — waiting for action chunks.")
 
     def _action_callback(self, msg: Float64MultiArray):
-        dims       = msg.layout.dim
-        n_steps    = dims[0].size
-        action_dim = dims[1].size
+        rospy.loginfo(f"[ControllerNode] franka process alive: {self.franka.is_alive()}")
+        try:
+            dims = msg.layout.dim
+            n_steps = dims[0].size
+            action_dim = dims[1].size
+            rospy.loginfo(f"[ControllerNode] n_steps={n_steps} action_dim={action_dim}")
 
-        if action_dim != 7:
-            rospy.logerr(
-                f"[ControllerNode] Expected action_dim=7, got {action_dim}")
-            return
+            if action_dim != 7:
+                rospy.logerr(f"[ControllerNode] Expected action_dim=7, got {action_dim}")
+                return
 
-        actions = np.array(msg.data, dtype=np.float64).reshape(n_steps, action_dim)
-
-        threading.Thread(
-            target=self._schedule_chunk, args=(actions,), daemon=True
-        ).start()
+            actions = np.array(msg.data, dtype=np.float64).reshape(n_steps, action_dim)
+            threading.Thread(
+                target=self._schedule_chunk, args=(actions,), daemon=True
+            ).start()
+        except Exception as e:
+            rospy.logerr(f"[ControllerNode] _action_callback error: {e}")
 
     def _schedule_chunk(self, actions: np.ndarray):
-        n_steps    = len(actions)
-        poses      = actions_to_poses(actions)
-        gripper    = actions[:, 6]
+        rospy.loginfo(f"[ControllerNode] _schedule_chunk called with {len(actions)} steps")
+        rospy.loginfo(f"[ControllerNode] command_queue size: {self.command_queue.qsize()}")
+        n_steps = len(actions)
+        poses = actions_to_poses(actions)
+        gripper = actions[:, 6]
 
         t_start    = time.time()
         dt         = 1.0 / self.action_hz
