@@ -1,172 +1,291 @@
 #!/usr/bin/env python3
 """
-sim_node.py  (sim client test version)
----------------------------------------
-Publishes action chunks to /diffusion_policy/action_chunk to drive
-controller_node running in --mode sim (PyBullet via Polymetis).
+sim_node.py  (HDF5 demo replay version)
+----------------------------------------
+Replays a recorded demonstration from an HDF5 file by publishing raw sensor
+data on the same topics that observation_node.py subscribes to.
 
-Does NOT work for hardware — positions are computed relative to the
-Panda home pose in PyBullet and are not validated against real workspace limits.
+observation_node.py then preprocesses the data identically to training,
+and publishes to /diffusion_policy/observation for eval_real.py.
+
+HDF5 dataset layout (mirrors data collector output):
+    /data/demo_N/
+        obs/
+            images1          (T, H, W, 3)  uint8  — cam1 (wrist)
+            images2          (T, H, W, 3)  uint8  — cam2 (external)
+            joint_positions  (T, 7)        float64
+            gripper_pos      (T, 2)        float64
 
 Setup:
-    # Terminal 1: start PyBullet sim server
+    # Terminal 1: ROS master
+    roscore
+
+    # Terminal 2: PyBullet sim server
     launch_robot.py robot_client=bullet_sim gui=true
 
-    # Terminal 2: controller node in sim mode
-    python controller_node.py --mode sim --interp_hz 50
+    # Terminal 3: controller node in sim mode
+    python controller_node.py --mode sim
 
-    # Terminal 3: this script
+    # Terminal 4: observation node
+    python observation_node.py
+
+    # Terminal 5: eval node
+    python eval_real.py
+
+    # Terminal 6: this script
     source /opt/ros/noetic/setup.bash
-    python sim_node.py
+    python sim_node.py --hdf5 /path/to/demo.hdf5 [options]
 
 Options:
-    --action_hz       chunk publish rate Hz  (default: 10, match controller)
-    --n_action_steps  steps per chunk        (default: 8)
-    --amplitude       metres of sine motion  (default: 0.03 = 3cm, safe for sim)
-    --verbose         print each chunk
+    --hdf5          path to HDF5 file (required)
+    --demo_idx      which demo to replay (default: 0)
+    --replay_hz     playback rate Hz    (default: 10, match observation_node)
+    --loop          loop the demo continuously
+    --cam1_topic    topic for wrist camera    (default: /eih/color/image_raw)
+    --cam2_topic    topic for external camera (default: /ext/color/image_raw)
+    --joint_topic   topic for joint states    (default: /franka_state_controller/joint_states)
+    --gripper_topic topic for gripper states  (default: /franka_gripper/joint_states)
+    --list_demos    list available demos and exit
+    --verbose       print per-step info
 """
 
 import argparse
 import time
+import sys
 
+import h5py
 import numpy as np
 import rospy
-from std_msgs.msg import Float64MultiArray, MultiArrayDimension
+import cv2
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image, JointState
+from std_msgs.msg import Header
 
 
-# ── Panda home EEF pose in PyBullet (what robot.go_home() lands at) ──────────
-# Polymetis bullet_sim starts at qr = [0, -pi/4, 0, -3pi/4, 0, pi/2, pi/4]
-# FK of that configuration gives approximately:
-PANDA_HOME_POS = np.array([0.307, 0.0, 0.487], dtype=np.float64)  # metres
+# ── HDF5 helpers ──────────────────────────────────────────────────────────────
 
-# ── Normalisation limits — must match controller_node + data conversion ───────
-EEF_POS_LOWER_LIMITS = np.array([0.3,  0.02, 0.07], dtype=np.float64)
-EEF_POS_UPPER_LIMITS = np.array([0.65, 0.25, 0.55], dtype=np.float64)
+def load_demo(hdf5_path: str, demo_idx: int) -> dict:
+    """
+    Load a single demonstration from HDF5.
+    Returns dict with numpy arrays for each sensor stream.
+    """
+    with h5py.File(hdf5_path, 'r') as f:
+        demos = sorted(f['data'].keys())
+
+        if not demos:
+            raise ValueError(f"No demos found in {hdf5_path}")
+
+        if demo_idx >= len(demos):
+            raise ValueError(
+                f"demo_idx={demo_idx} out of range — file has {len(demos)} demos "
+                f"(0–{len(demos)-1})"
+            )
+
+        demo_key = f"data/{demos[demo_idx]}"
+        rospy.loginfo(f"[SimNode] Loading demo: {demo_key}")
+
+        obs = f[f"{demo_key}/obs"]
+
+        # Load all streams — squeeze in case of extra dims
+        images1         = obs['images1'][:]          # (T, H, W, 3)  uint8
+        images2         = obs['images2'][:]          # (T, H, W, 3)  uint8
+        joint_positions = obs['joint_positions'][:]  # (T, 7)        float64
+        gripper_pos     = obs['gripper_pos'][:]      # (T, 2)        float64
+
+        T = images1.shape[0]
+        rospy.loginfo(
+            f"[SimNode] Demo loaded ✓\n"
+            f"  steps          : {T}\n"
+            f"  image shape    : {images1.shape[1:]}\n"
+            f"  joint shape    : {joint_positions.shape[1:]}\n"
+            f"  gripper shape  : {gripper_pos.shape[1:]}\n"
+        )
+
+        return {
+            'images1':         images1,
+            'images2':         images2,
+            'joint_positions': joint_positions,
+            'gripper_pos':     gripper_pos,
+            'n_steps':         T,
+        }
 
 
-def normalize_eef_pos(pos: np.ndarray) -> np.ndarray:
-    pos_range = EEF_POS_UPPER_LIMITS - EEF_POS_LOWER_LIMITS
-    return 2.0 * (pos - EEF_POS_LOWER_LIMITS) / pos_range - 1.0
+def list_demos(hdf5_path: str):
+    """Print available demos and their lengths."""
+    with h5py.File(hdf5_path, 'r') as f:
+        demos = sorted(f['data'].keys())
+        print(f"\nFile: {hdf5_path}")
+        print(f"Found {len(demos)} demos:\n")
+        for i, d in enumerate(demos):
+            key = f"data/{d}/obs"
+            try:
+                T = f[f"{key}/images1"].shape[0]
+                print(f"  [{i:3d}]  {d}  ({T} steps)")
+            except Exception:
+                print(f"  [{i:3d}]  {d}  (could not read steps)")
+        print()
 
 
-def build_action_msg(actions: np.ndarray) -> Float64MultiArray:
-    """actions: (N, 7)  [norm_pos(3) | euler_xyz(3) | gripper(1)]"""
-    n_steps, action_dim = actions.shape
-    msg = Float64MultiArray()
-    msg.layout.dim = [
-        MultiArrayDimension(label="n_steps",
-                            size=n_steps,
-                            stride=n_steps * action_dim),
-        MultiArrayDimension(label="action_dim",
-                            size=action_dim,
-                            stride=action_dim),
-    ]
-    msg.data = actions.flatten().tolist()
+# ── Publisher helpers ─────────────────────────────────────────────────────────
+
+def make_image_msg(bridge: CvBridge, rgb_img: np.ndarray,
+                   stamp: rospy.Time, frame_id: str = "camera") -> Image:
+    """
+    Publish as rgb8 — observation_node.py calls imgmsg_to_cv2() without
+    a desired encoding, so it will receive what we send.
+    The HDF5 stores raw RGB from the data collector, so we send RGB.
+    """
+    msg = bridge.cv2_to_imgmsg(rgb_img, encoding="rgb8")
+    msg.header.stamp    = stamp
+    msg.header.frame_id = frame_id
     return msg
 
 
-def make_chunk(t_start: float, n_steps: int,
-               action_hz: float, amplitude: float) -> np.ndarray:
-    """
-    Slow sine/cosine motion centred on Panda home position.
-    Orientation fixed (wrist pointing down).
-    Gripper opens and closes every 5 seconds.
-    """
-    dt    = 1.0 / action_hz
-    times = t_start + np.arange(n_steps) * dt
-    freq  = 0.05   # Hz — very slow, easy to watch in PyBullet GUI
-
-    x = PANDA_HOME_POS[0] + amplitude * np.sin(2 * np.pi * freq * times)
-    y = PANDA_HOME_POS[1] + amplitude * np.cos(2 * np.pi * freq * times)
-    z = np.full(n_steps, PANDA_HOME_POS[2])
-
-    real_pos = np.stack([x, y, z], axis=1)   # (N, 3) metres
-    norm_pos = normalize_eef_pos(real_pos)    # (N, 3) in [-1,1]
-
-    # neutral orientation — wrist pointing straight down
-    euler = np.zeros((n_steps, 3), dtype=np.float64)
-    euler[:, 0] = np.pi
-
-    # toggle gripper every 5 s
-    gripper = np.where((times % 10.0) < 5.0, 1.0, 0.0).reshape(-1, 1)
-
-    return np.concatenate([norm_pos, euler, gripper], axis=1)  # (N, 7)
+def make_joint_state_msg(positions: np.ndarray,
+                         joint_names: list,
+                         stamp: rospy.Time) -> JointState:
+    msg                 = JointState()
+    msg.header.stamp    = stamp
+    msg.header.frame_id = ""
+    msg.name            = joint_names
+    msg.position        = positions.tolist()
+    msg.velocity        = [0.0] * len(positions)
+    msg.effort          = [0.0] * len(positions)
+    return msg
 
 
-def print_chunk(chunk: np.ndarray, idx: int):
-    print(f"\n{'─'*65}")
-    print(f"  Chunk #{idx}   shape={chunk.shape}")
-    print(f"{'─'*65}")
-    print(f"  {'step':>4}  "
-          f"{'eef_x':>8} {'eef_y':>8} {'eef_z':>8}  "
-          f"{'roll':>8} {'pitch':>8} {'yaw':>8}  {'grip':>5}")
-    print(f"  {'':->4}  {'':->8} {'':->8} {'':->8}  "
-          f"{'':->8} {'':->8} {'':->8}  {'':->5}")
-    for i, row in enumerate(chunk):
-        print(f"  {i:>4}  "
-              f"{row[0]:>8.4f} {row[1]:>8.4f} {row[2]:>8.4f}  "
-              f"{row[3]:>8.4f} {row[4]:>8.4f} {row[5]:>8.4f}  "
-              f"{'open' if row[6] > 0.5 else 'close':>5}")
-    print(f"{'─'*65}")
-
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sim node — drives controller_node --mode sim only")
-    parser.add_argument("--action_hz",      type=float, default=10.0,
-                        help="Publish rate Hz — must match controller (default 10)")
-    parser.add_argument("--n_action_steps", type=int,   default=8,
-                        help="Steps per chunk (default 8)")
-    parser.add_argument("--amplitude",      type=float, default=0.03,
-                        help="Sine amplitude in metres (default 0.03 = 3cm)")
-    parser.add_argument("--verbose",        action="store_true",
-                        help="Print each chunk")
+        description="Replay HDF5 demo on raw sensor topics for observation_node")
+
+    parser.add_argument("--hdf5",          type=str, required=False,
+                        help="Path to HDF5 demo file")
+    parser.add_argument("--demo_idx",      type=int, default=0,
+                        help="Demo index to replay (default: 0)")
+    parser.add_argument("--replay_hz",     type=float, default=10.0,
+                        help="Playback rate Hz — match observation_node publish_hz (default: 10)")
+    parser.add_argument("--loop",          action="store_true",
+                        help="Loop demo continuously")
+    parser.add_argument("--cam1_topic",    type=str, default="/eih/color/image_raw",
+                        help="Wrist camera topic (default: /eih/color/image_raw)")
+    parser.add_argument("--cam2_topic",    type=str, default="/ext/color/image_raw",
+                        help="External camera topic (default: /ext/color/image_raw)")
+    parser.add_argument("--joint_topic",   type=str,
+                        default="/franka_state_controller/joint_states",
+                        help="Joint states topic")
+    parser.add_argument("--gripper_topic", type=str,
+                        default="/franka_gripper/joint_states",
+                        help="Gripper states topic")
+    parser.add_argument("--list_demos",    action="store_true",
+                        help="List demos in HDF5 file and exit")
+    parser.add_argument("--verbose",       action="store_true",
+                        help="Print per-step info")
+
     args, unknown = parser.parse_known_args()
 
+    # ── list mode — no ROS needed ─────────────────────────────────────────────
+    if args.list_demos:
+        if not args.hdf5:
+            print("Error: --hdf5 is required with --list_demos")
+            sys.exit(1)
+        list_demos(args.hdf5)
+        sys.exit(0)
+
+    if not args.hdf5:
+        parser.error("--hdf5 is required")
+
+    # ── init ROS ──────────────────────────────────────────────────────────────
     rospy.init_node("sim_node", anonymous=False)
 
-    pub = rospy.Publisher(
-        "/diffusion_policy/action_chunk",
-        Float64MultiArray,
-        queue_size=1,
-    )
+    # ── load demo ─────────────────────────────────────────────────────────────
+    rospy.loginfo(f"[SimNode] Loading {args.hdf5} demo_idx={args.demo_idx} ...")
+    demo = load_demo(args.hdf5, args.demo_idx)
 
-    rate      = rospy.Rate(args.action_hz)
-    t_start   = time.time()
-    pub_count = 0
+    # ── publishers — raw sensor topics, same as observation_node subscribes to ─
+    bridge = CvBridge()
+
+    pub_cam1 = rospy.Publisher(
+        args.cam1_topic, Image, queue_size=1)
+    pub_cam2 = rospy.Publisher(
+        args.cam2_topic, Image, queue_size=1)
+    pub_joints = rospy.Publisher(
+        args.joint_topic, JointState, queue_size=1)
+    pub_gripper = rospy.Publisher(
+        args.gripper_topic, JointState, queue_size=1)
+
+    # Joint names expected by franka_state_controller
+    JOINT_NAMES = [f"panda_joint{i}" for i in range(1, 8)]
+
+    # Gripper finger names expected by franka_gripper
+    GRIPPER_NAMES = ["panda_finger_joint1", "panda_finger_joint2"]
+
+    rate      = rospy.Rate(args.replay_hz)
+    n_steps   = demo['n_steps']
+    step_idx  = 0
+    loop_num  = 0
 
     rospy.loginfo(
-        f"[SimNode] Starting\n"
-        f"  action_hz      : {args.action_hz}\n"
-        f"  n_action_steps : {args.n_action_steps}\n"
-        f"  amplitude      : {args.amplitude} m\n"
-        f"  home pos       : {PANDA_HOME_POS}\n"
-        f"Publishing to    : /diffusion_policy/action_chunk\n"
-        f"NOTE: for sim client only — do not use with hardware mode\n"
+        f"[SimNode] Starting replay\n"
+        f"  hdf5           : {args.hdf5}\n"
+        f"  demo_idx       : {args.demo_idx}\n"
+        f"  n_steps        : {n_steps}\n"
+        f"  replay_hz      : {args.replay_hz}\n"
+        f"  loop           : {args.loop}\n"
+        f"  cam1 topic     : {args.cam1_topic}\n"
+        f"  cam2 topic     : {args.cam2_topic}\n"
+        f"  joint topic    : {args.joint_topic}\n"
+        f"  gripper topic  : {args.gripper_topic}\n"
         f"Press Ctrl+C to stop."
     )
 
+    # Brief pause so subscribers (observation_node) can connect
+    rospy.sleep(1.0)
+
     while not rospy.is_shutdown():
-        t_now = time.time() - t_start
-        chunk = make_chunk(
-            t_start=t_now,
-            n_steps=args.n_action_steps,
-            action_hz=args.action_hz,
-            amplitude=args.amplitude,
-        )
+        if step_idx >= n_steps:
+            if args.loop:
+                step_idx = 0
+                loop_num += 1
+                rospy.loginfo(f"[SimNode] Loop {loop_num} restarting demo ...")
+                rospy.sleep(0.5)
+                continue
+            else:
+                rospy.loginfo("[SimNode] Demo finished. Shutting down.")
+                break
+
+        stamp = rospy.Time.now()
+
+        # ── publish raw camera images (uint8 RGB — identical to data collector) ─
+        img1_msg = make_image_msg(
+            bridge, demo['images1'][step_idx], stamp, frame_id="camera_wrist")
+        img2_msg = make_image_msg(
+            bridge, demo['images2'][step_idx], stamp, frame_id="camera_ext")
+
+        pub_cam1.publish(img1_msg)
+        pub_cam2.publish(img2_msg)
+
+        # ── publish joint states ───────────────────────────────────────────────
+        joint_msg = make_joint_state_msg(
+            demo['joint_positions'][step_idx], JOINT_NAMES, stamp)
+        pub_joints.publish(joint_msg)
+
+        # ── publish gripper states ─────────────────────────────────────────────
+        gripper_msg = make_joint_state_msg(
+            demo['gripper_pos'][step_idx], GRIPPER_NAMES, stamp)
+        pub_gripper.publish(gripper_msg)
 
         if args.verbose:
-            print_chunk(chunk, pub_count + 1)
+            q  = demo['joint_positions'][step_idx]
+            gp = demo['gripper_pos'][step_idx]
+            rospy.loginfo(
+                f"[SimNode] step {step_idx:4d}/{n_steps} | "
+                f"q[0:3]={np.round(q[:3], 4)} | "
+                f"gripper={np.round(gp, 4)}"
+            )
 
-        pub.publish(build_action_msg(chunk))
-        pub_count += 1
-
-        rospy.loginfo(
-            f"[SimNode] chunk {pub_count:4d} | "
-            f"x={chunk[0,0]:.3f} y={chunk[0,1]:.3f} z={chunk[0,2]:.3f} "
-            f"(norm) | grip={'open' if chunk[0,6] > 0.5 else 'close'}"
-        )
-
+        step_idx += 1
         rate.sleep()
 
 

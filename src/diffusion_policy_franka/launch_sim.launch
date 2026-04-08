@@ -5,10 +5,19 @@
          launch_robot.py robot_client=bullet_sim gui=true
 
      Usage:
-         # Controller test only (no policy, no checkpoint needed):
-         roslaunch diffusion_policy_franka diffusion_policy_sim.launch
+         # HDF5 demo replay → full policy pipeline:
+         roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
+             hdf5_path:=/path/to/demo.hdf5 \
+             checkpoint_path:=/path/to/latest.ckpt
 
-         # Full pipeline (needs checkpoint + observation source):
+         # HDF5 replay, specific demo, looping:
+         roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
+             hdf5_path:=/path/to/demo.hdf5 \
+             demo_idx:=2 \
+             loop:=true \
+             checkpoint_path:=/path/to/latest.ckpt
+
+         # Skip sim_node — use a live digital twin or other image source:
          roslaunch diffusion_policy_franka diffusion_policy_sim.launch \
              use_sim_node:=false \
              checkpoint_path:=/path/to/latest.ckpt
@@ -22,56 +31,67 @@
   <arg name="n_obs_steps"         default="2"/>
   <arg name="output_dir"          default="/tmp/eval_real_output"/>
   <arg name="action_hz"           default="10.0"/>
-  <arg name="interp_hz"           default="50.0"/>   <!-- lower for sim -->
-  <arg name="amplitude"           default="0.03"/>
-  <arg name="n_action_steps"      default="8"/>
+  <arg name="interp_hz"           default="50.0"/>
 
-  <!-- set false to run full policy pipeline instead of sim_node -->
+  <!-- sim_node HDF5 replay args -->
+  <arg name="hdf5_path"           default=""/>       <!-- required if use_sim_node=true -->
+  <arg name="demo_idx"            default="0"/>
+  <arg name="loop"                default="false"/>
+
+  <!-- set false if using a digital twin or other live image source -->
   <arg name="use_sim_node"        default="true"/>
 
-  <!-- ── sim_node: feeds fake action chunks directly ───────────────── -->
-  <!-- active when use_sim_node=true — bypasses observation + policy   -->
+  <!-- ── sim_node: replays raw sensor data from HDF5 onto sensor topics ── -->
+  <!-- observation_node subscribes to these same topics and preprocesses  -->
   <group if="$(arg use_sim_node)">
     <node name="sim_node"
           pkg="diffusion_policy_franka"
           type="sim_node.py"
           output="screen">
-      <param name="action_hz"       value="$(arg action_hz)"/>
-      <param name="n_action_steps"  value="$(arg n_action_steps)"/>
-      <param name="amplitude"       value="$(arg amplitude)"/>
+      <param name="hdf5_path"   value="$(arg hdf5_path)"/>
+      <param name="demo_idx"    value="$(arg demo_idx)"/>
+      <param name="replay_hz"   value="$(arg action_hz)"/>
+      <param name="loop"        value="$(arg loop)"/>
+      <!-- topics must match observation_node's cam1/cam2 params below -->
+      <param name="cam1_topic"    value="/eih/color/image_raw"/>
+      <param name="cam2_topic"    value="/ext/color/image_raw"/>
+      <param name="joint_topic"   value="/franka_state_controller/joint_states"/>
+      <param name="gripper_topic" value="/franka_gripper/joint_states"/>
     </node>
   </group>
 
-  <!-- ── full policy pipeline ──────────────────────────────────────── -->
-  <!-- active when use_sim_node=false                                  -->
-  <group unless="$(arg use_sim_node)">
+  <!-- ── observation_node — always running ─────────────────────────── -->
+  <!-- When use_sim_node=true:  receives raw data from sim_node above   -->
+  <!-- When use_sim_node=false: receives data from digital twin / other -->
+  <node name="observation_node"
+        pkg="diffusion_policy_franka"
+        type="observation_node.py"
+        output="screen">
+    <param name="n_obs_steps" value="$(arg n_obs_steps)"/>
+    <param name="publish_hz"  value="$(arg action_hz)"/>
+    <!-- When use_sim_node=true these match sim_node's output topics.   -->
+    <!-- When use_sim_node=false point at your digital twin topics.     -->
+    <param name="cam1_topic"  value="/eih/color/image_raw"/>
+    <param name="cam2_topic"  value="/ext/color/image_raw"/>
+  </node>
 
-    <node name="observation_node"
-          pkg="diffusion_policy_franka"
-          type="observation_node.py"
-          output="screen">
-      <param name="n_obs_steps" value="$(arg n_obs_steps)"/>
-      <param name="publish_hz"  value="$(arg action_hz)"/>
-      <!-- sim publishes on /sim/ topics from digital_twin_node -->
-      <param name="cam1_topic"  value="/sim/eih/color/image_raw"/>
-      <param name="cam2_topic"  value="/sim/ext/color/image_raw"/>
-    </node>
-
-    <node name="eval_real"
-          pkg="diffusion_policy_franka"
-          type="eval_real.py"
-          output="screen"
-          launch-prefix="taskset -c 4,5,6,7">
-      <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
-      <param name="device"              value="$(arg device)"/>
-      <param name="num_inference_steps" value="$(arg num_inference_steps)"/>
-      <param name="n_obs_steps"         value="$(arg n_obs_steps)"/>
-      <param name="output_dir"          value="$(arg output_dir)"/>
-    </node>
-
-  </group>
+  <!-- ── eval_real — always running ────────────────────────────────── -->
+  <!-- Subscribes to /diffusion_policy/observation from observation_node -->
+  <!-- Publishes action chunks to /diffusion_policy/action_chunk        -->
+  <node name="eval_real"
+        pkg="diffusion_policy_franka"
+        type="eval_real.py"
+        output="screen"
+        launch-prefix="taskset -c 4,5,6,7">
+    <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
+    <param name="device"              value="$(arg device)"/>
+    <param name="num_inference_steps" value="$(arg num_inference_steps)"/>
+    <param name="n_obs_steps"         value="$(arg n_obs_steps)"/>
+    <param name="output_dir"          value="$(arg output_dir)"/>
+  </node>
 
   <!-- ── controller_node — always running ──────────────────────────── -->
+  <!-- Receives action chunks and drives PyBullet via Polymetis         -->
   <node name="controller_node"
         pkg="diffusion_policy_franka"
         type="controller_node.py"

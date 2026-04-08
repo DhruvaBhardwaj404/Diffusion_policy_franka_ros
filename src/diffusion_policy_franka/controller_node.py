@@ -30,12 +30,11 @@ import multiprocessing as mp
 import time
 import threading
 import sys
-
+sys.path.insert(0, '')
 import numpy as np
 import rospy
 from scipy.spatial.transform import Rotation
 from std_msgs.msg import Float64MultiArray
-
 from polymetis import RobotInterface
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
 
