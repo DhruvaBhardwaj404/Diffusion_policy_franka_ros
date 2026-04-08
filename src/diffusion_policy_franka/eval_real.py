@@ -36,7 +36,8 @@ from std_msgs.msg import Float64MultiArray, MultiArrayDimension
 import sys
 sys.path.insert(0, '')
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
-
+import json
+import traceback
 
 # ── Obs unpacking ─────────────────────────────────────────────────────────────
 
@@ -165,7 +166,6 @@ class RealRobotRunner:
 
         except Exception as e:
             rospy.logerr(f"[EvalReal] Inference error: {e}")
-            import traceback
             rospy.logerr(traceback.format_exc())
 
     def _publish_action_chunk(self, actions: np.ndarray):
@@ -215,16 +215,16 @@ def main():
     # ── read params from launch file ──────────────────────────────────────────
     checkpoint_path     = rospy.get_param("~checkpoint_path")
     device              = rospy.get_param("~device",              "cuda:0")
-    num_inference_steps = rospy.get_param("~num_inference_steps", 10)
-    n_obs_steps         = rospy.get_param("~n_obs_steps",         2)
+    # num_inference_steps = rospy.get_param("~num_inference_steps", 10)
+    # n_obs_steps         = rospy.get_param("~n_obs_steps",         2)
     output_dir          = rospy.get_param("~output_dir",          "/tmp/eval_real_output")
 
     rospy.loginfo(
         f"[EvalReal] Config\n"
         f"  checkpoint      : {checkpoint_path}\n"
         f"  device          : {device}\n"
-        f"  n_obs_steps     : {n_obs_steps}\n"
-        f"  inference_steps : {num_inference_steps}\n"
+        # f"  n_obs_steps     : {n_obs_steps}\n"
+        # f"  inference_steps : {num_inference_steps}\n"
         f"  output_dir      : {output_dir}\n"
     )
 
@@ -245,9 +245,10 @@ def main():
 
     policy.to(torch.device(device))
     policy.eval()
-
-    # override inference steps (DDPM → DDIM for speed)
-    policy.num_inference_steps = num_inference_steps
+    n_obs_steps = cfg.policy.n_obs_steps
+    num_inference_steps = cfg.policy.num_inference_steps
+    # # override inference steps (DDPM → DDIM for speed)
+    # policy.num_inference_steps = num_inference_steps
 
     # use n_obs_steps from param — must match training config
     # (param takes priority; fall back to cfg if not set differently)
@@ -264,7 +265,6 @@ def main():
     runner_log = runner.run()
 
     # ── save log ──────────────────────────────────────────────────────────────
-    import json
     out_path = os.path.join(output_dir, 'eval_log.json')
     with open(out_path, 'w') as f:
         json.dump(runner_log, f, indent=2, sort_keys=True)

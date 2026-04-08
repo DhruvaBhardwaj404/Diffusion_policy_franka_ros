@@ -44,20 +44,6 @@
     <param name="cam2_topic"  value="$(arg cam2_topic)"/>
   </node>
 
-  <!-- ── eval_real (policy inference) ─────────────────────────────── -->
-  <!-- pinned to cores 4-7 to avoid competing with controller on 0-3  -->
-  <node name="eval_real"
-        pkg="diffusion_policy_franka"
-        type="eval_real.py"
-        output="screen"
-        launch-prefix="taskset -c 4,5,6,7">
-    <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
-    <param name="device"              value="$(arg device)"/>
-    <param name="num_inference_steps" value="$(arg num_inference_steps)"/>
-    <param name="n_obs_steps"         value="$(arg n_obs_steps)"/>
-    <param name="output_dir"          value="$(arg output_dir)"/>
-  </node>
-
   <!-- ── controller_node ───────────────────────────────────────────── -->
   <node name="controller_node"
         pkg="diffusion_policy_franka"

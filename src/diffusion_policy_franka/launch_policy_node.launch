@@ -1,0 +1,19 @@
+
+<launch>
+
+    <!-- ── args ──────────────────────────────────────────────────────── -->
+    <arg name="checkpoint_path"     default="/tmp/latest.ckpt"/>
+    <arg name="device"              default="cuda:0"/>
+    <arg name="output_dir"          default="/tmp/eval_real_output"/>
+
+    <node name="eval_real"
+            pkg="diffusion_policy_franka"
+            type="eval_real.py"
+            output="screen"
+            launch-prefix="taskset -c 4,5,6,7">
+        <param name="checkpoint_path"     value="$(arg checkpoint_path)"/>
+        <param name="device"              value="$(arg device)"/>
+        <param name="output_dir"          value="$(arg output_dir)"/>
+      </node>
+
+</launch>

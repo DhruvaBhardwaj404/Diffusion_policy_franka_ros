@@ -37,7 +37,8 @@ from scipy.spatial.transform import Rotation
 from std_msgs.msg import Float64MultiArray
 from polymetis import RobotInterface
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
-
+import torch
+from polymetis import GripperInterface
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,6 @@ class Command(enum.Enum):
 
 class HardwareGripper:
     def __init__(self, robot_ip: str):
-        from polymetis import GripperInterface
         print(f"[Gripper] Connecting to {robot_ip} ...")
         self.gripper   = GripperInterface(ip_address=robot_ip)
         self.is_closed = False
@@ -136,7 +136,6 @@ class FrankaController(mp.Process):
         self.ready_event   = mp.Event()
 
     def run(self):
-        import torch
 
         print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
         robot = RobotInterface(ip_address=self.robot_ip)
