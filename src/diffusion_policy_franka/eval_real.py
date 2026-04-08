@@ -158,12 +158,13 @@ class RealRobotRunner:
             self.inference_times.append(elapsed)
             self.chunks_published += 1
 
-            rospy.loginfo(
+            msg = (
                 f"[EvalReal] chunk {self.chunks_published:4d} | "
                 f"inference {elapsed:6.1f} ms | "
-                f"actions {actions.shape}",
-                f"actions:\n{np.round(actions, 4)}"
+                f"actions shape: {actions.shape}\n"
+                f"{np.round(actions, 4)}"
             )
+            rospy.loginfo(msg)
 
         except Exception as e:
             rospy.logerr(f"[EvalReal] Inference error: {e}")
