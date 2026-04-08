@@ -34,7 +34,7 @@ import torch
 import rospy
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension
 import sys
-sys.path.insert(0, '')
+sys.path.insert(0, '/media/prabhav/SATA_SSD/dhruv/Diffusion-Transformer')
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 import json
 import traceback
