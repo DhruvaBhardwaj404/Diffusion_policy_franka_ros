@@ -122,7 +122,6 @@ class FrankaController(mp.Process):
     PoseTrajectoryInterpolator at interp_hz. Escapes Python GIL.
     Identical for sim and hardware — only robot_ip differs.
     """
-
     def __init__(self, command_queue: mp.Queue, robot_ip: str,
                  interp_hz: float = 200.0, max_pos_speed: float = 0.25,
                  max_rot_speed: float = 0.6, verbose: bool = False):
@@ -141,25 +140,28 @@ class FrankaController(mp.Process):
             robot = RobotInterface(ip_address=self.robot_ip)
             robot.go_home()
 
-            # seed interpolator from current EEF pose
-            state = robot.get_ee_pose()
-            pos0 = state[0].numpy()
+            # Seed interpolator from current EEF pose
+            state  = robot.get_ee_pose()
+            pos0   = state[0].numpy()
             q_wxyz = state[1].numpy()
             q_xyzw = np.array([q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]])
-
-            # PoseTrajectoryInterpolator expects (xyz + rotvec) — 6DOF
             rotvec0 = Rotation.from_quat(q_xyzw).as_rotvec()
-            pose0 = np.concatenate([pos0, rotvec0])  # (6,)
+            pose0   = np.concatenate([pos0, rotvec0])   # (6,)
+
             t0 = time.monotonic()
 
-            interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
+            mono_wall_offset = time.monotonic() - time.time()
 
+            interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
             dt = 1.0 / self.interp_hz
+
             self.ready_event.set()
             print(f"[FrankaController] Running at {self.interp_hz} Hz")
 
             while True:
                 t_now = time.monotonic()
+
+                last_waypoint_time = interp.times[-1]
 
                 while not self.command_queue.empty():
                     try:
@@ -172,14 +174,13 @@ class FrankaController(mp.Process):
                         return
 
                     elif cmd['cmd'] == Command.SCHEDULE_WAYPOINT.value:
-                        target_pose = np.array(cmd['pose'])  # (7,) xyz+xyzw
+                        target_pose = np.array(cmd['pose'])
                         target_time = float(cmd['time'])
-                        target_time_mono = time.monotonic() - time.time() + target_time
+                        target_time_mono = mono_wall_offset + target_time
 
-                        # convert quat → rotvec for interpolator
                         t_pos = target_pose[:3]
                         t_rotvec = Rotation.from_quat(target_pose[3:]).as_rotvec()
-                        t_pose6 = np.concatenate([t_pos, t_rotvec])  # (6,)
+                        t_pose6 = np.concatenate([t_pos, t_rotvec])
 
                         interp = interp.schedule_waypoint(
                             pose=t_pose6,
@@ -187,24 +188,32 @@ class FrankaController(mp.Process):
                             max_pos_speed=self.max_pos_speed,
                             max_rot_speed=self.max_rot_speed,
                             curr_time=t_now,
-                            last_waypoint_time=t_now,
+                            last_waypoint_time=last_waypoint_time,
                         )
+                        last_waypoint_time = interp.times[-1]
 
-                # interpolate and send to robot
-                pose_now = interp(t_now)  # (6,) xyz + rotvec
+                pose_now = interp(t_now)
+                pose_next = interp(t_now + dt)
+
                 pos = pose_now[:3]
                 rotvec = pose_now[3:]
+
+                vel_linear = (pose_next[:3] - pose_now[:3]) / dt
+                vel_angular = (pose_next[3:] - pose_now[3:]) / dt
+
                 q_xyzw = Rotation.from_rotvec(rotvec).as_quat()
                 q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
 
                 robot.move_to_ee_pose(
                     position=torch.tensor(pos, dtype=torch.float32),
                     orientation=torch.tensor(q_wxyz, dtype=torch.float32),
-                    time_to_go=dt * 2,
+                    time_to_go=dt,
+                    ee_linear_vel=torch.tensor(vel_linear, dtype=torch.float32),
+                    ee_angular_vel=torch.tensor(vel_angular, dtype=torch.float32),
                 )
 
                 if self.verbose:
-                    print(f"[FrankaController] pos={np.round(pos, 4)}")
+                    print(f"[FrankaController] pos={np.round(pos, 4)} vel={np.round(vel_linear, 4)}")
 
                 elapsed = time.monotonic() - t_now
                 time.sleep(max(0.0, dt - elapsed))
@@ -214,7 +223,6 @@ class FrankaController(mp.Process):
             import traceback
             traceback.print_exc()
             self.ready_event.set()
-
 
 # ── ROS controller node ───────────────────────────────────────────────────────
 

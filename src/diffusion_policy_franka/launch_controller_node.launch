@@ -33,16 +33,6 @@
   <arg name="max_pos_speed"       default="0.25"/>
   <arg name="max_rot_speed"       default="0.6"/>
 
-  <!-- ── observation_node ──────────────────────────────────────────── -->
-  <node name="observation_node"
-        pkg="diffusion_policy_franka"
-        type="observation_node.py"
-        output="screen">
-    <param name="n_obs_steps" value="$(arg n_obs_steps)"/>
-    <param name="publish_hz"  value="$(arg action_hz)"/>
-    <param name="cam1_topic"  value="$(arg cam1_topic)"/>
-    <param name="cam2_topic"  value="$(arg cam2_topic)"/>
-  </node>
 
   <!-- ── controller_node ───────────────────────────────────────────── -->
   <node name="controller_node"

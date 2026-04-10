@@ -217,16 +217,12 @@ def main():
     # ── read params from launch file ──────────────────────────────────────────
     checkpoint_path     = rospy.get_param("~checkpoint_path")
     device              = rospy.get_param("~device",              "cuda:0")
-    # num_inference_steps = rospy.get_param("~num_inference_steps", 10)
-    # n_obs_steps         = rospy.get_param("~n_obs_steps",         2)
     output_dir          = rospy.get_param("~output_dir",          "/tmp/eval_real_output")
 
     rospy.loginfo(
         f"[EvalReal] Config\n"
         f"  checkpoint      : {checkpoint_path}\n"
         f"  device          : {device}\n"
-        # f"  n_obs_steps     : {n_obs_steps}\n"
-        # f"  inference_steps : {num_inference_steps}\n"
         f"  output_dir      : {output_dir}\n"
     )
 
@@ -249,11 +245,7 @@ def main():
     policy.eval()
     n_obs_steps = cfg.policy.n_obs_steps
     num_inference_steps = cfg.policy.num_inference_steps
-    # # override inference steps (DDPM → DDIM for speed)
-    # policy.num_inference_steps = num_inference_steps
 
-    # use n_obs_steps from param — must match training config
-    # (param takes priority; fall back to cfg if not set differently)
     rospy.loginfo("[EvalReal] Checkpoint loaded ✓")
 
     # ── run ───────────────────────────────────────────────────────────────────

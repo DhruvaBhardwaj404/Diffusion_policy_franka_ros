@@ -1,0 +1,48 @@
+<!-- ═══════════════════════════════════════════════════════════════════
+     Real robot mode — full pipeline on real Franka via Polymetis
+
+     Start on RT machine before roslaunch:
+         launch_robot.py robot_client=franka_hardware \
+             robot_client.executable_cfg.robot_ip=<franka_ip>
+         launch_gripper.py gripper=franka_hand
+
+     Usage:
+         roslaunch diffusion_policy_franka diffusion_policy_real.launch \
+             checkpoint_path:=/path/to/latest.ckpt \
+             robot_ip:=192.168.1.100
+═══════════════════════════════════════════════════════════════════ -->
+<launch>
+
+  <!-- ── args ──────────────────────────────────────────────────────── -->
+  <arg name="checkpoint_path"     default="/tmp/latest.ckpt"/>
+  <arg name="device"              default="cuda:0"/>
+  <arg name="num_inference_steps" default="10"/>
+  <arg name="n_obs_steps"         default="2"/>
+  <arg name="output_dir"          default="/tmp/eval_real_output"/>
+  <arg name="action_hz"           default="10.0"/>
+  <arg name="interp_hz"           default="200.0"/>
+
+  <!-- RT machine IP — always required for hardware mode -->
+  <arg name="robot_ip"/>
+
+  <!-- camera topics — must match data collector exactly -->
+  <arg name="cam1_topic"          default="/eih/color/image_raw"/>
+  <arg name="cam2_topic"          default="/ext/color/image_raw"/>
+
+  <!-- speed limits — start conservative -->
+  <arg name="max_pos_speed"       default="0.25"/>
+  <arg name="max_rot_speed"       default="0.6"/>
+
+  <!-- ── observation_node ──────────────────────────────────────────── -->
+  <node name="observation_node"
+        pkg="diffusion_policy_franka"
+        type="observation_node.py"
+        output="screen">
+    <param name="n_obs_steps" value="$(arg n_obs_steps)"/>
+    <param name="publish_hz"  value="$(arg action_hz)"/>
+    <param name="cam1_topic"  value="$(arg cam1_topic)"/>
+    <param name="cam2_topic"  value="$(arg cam2_topic)"/>
+  </node>
+
+
+</launch>
