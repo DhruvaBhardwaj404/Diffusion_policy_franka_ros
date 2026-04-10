@@ -14,20 +14,12 @@
 <launch>
 
   <!-- ── args ──────────────────────────────────────────────────────── -->
-  <arg name="checkpoint_path"     default="/tmp/latest.ckpt"/>
-  <arg name="device"              default="cuda:0"/>
-  <arg name="num_inference_steps" default="10"/>
-  <arg name="n_obs_steps"         default="2"/>
-  <arg name="output_dir"          default="/tmp/eval_real_output"/>
+
   <arg name="action_hz"           default="10.0"/>
   <arg name="interp_hz"           default="200.0"/>
 
   <!-- RT machine IP — always required for hardware mode -->
   <arg name="robot_ip"/>
-
-  <!-- camera topics — must match data collector exactly -->
-  <arg name="cam1_topic"          default="/eih/color/image_raw"/>
-  <arg name="cam2_topic"          default="/ext/color/image_raw"/>
 
   <!-- speed limits — start conservative -->
   <arg name="max_pos_speed"       default="0.25"/>

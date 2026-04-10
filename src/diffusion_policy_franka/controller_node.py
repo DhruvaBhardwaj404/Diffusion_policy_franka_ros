@@ -139,7 +139,7 @@ class FrankaController(mp.Process):
         try:
             print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
-            robot.go_home()
+            # robot.go_home()
 
             # Seed interpolator from current EEF pose
             state = robot.get_ee_pose()

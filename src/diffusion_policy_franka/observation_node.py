@@ -10,8 +10,7 @@ Data collector → HDF5 conversion → This node (must all match)
 Topic mapping (from data collector):
     cam1  /eih/color/image_raw   → images1 → camera_image        (wrist)
     cam2  /ext/color/image_raw   → images2 → camera_wrist_image  (external)
-    /franka_state_controller/joint_states  → joints (7,)
-    /franka_gripper/joint_states           → gripper_pos (2,)
+    joints + gripper now polled directly from Polymetis
 
 Preprocessing applied (matching data conversion script):
     Images : rgb8 → resize 84x84 INTER_AREA → rgb2RGB → /255 → CHW float32
@@ -31,8 +30,9 @@ import rospy
 import roboticstoolbox as rtb
 from cv_bridge import CvBridge, CvBridgeError
 from scipy.spatial.transform import Rotation
-from sensor_msgs.msg import Image, JointState
+from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension
+from polymetis import RobotInterface, GripperInterface
 
 
 # ── Normalisation constants — must match data conversion script exactly ────────
@@ -65,13 +65,9 @@ def preprocess_image(rgb_img: np.ndarray) -> np.ndarray:
     """
     Matches resize_images() in data conversion script exactly:
       (H, W, 3) uint8 rgb  →  (3, 84, 84) float32 [0,1] RGB CHW
-
-    The data collector stores raw rgb from cv_bridge.
-    The conversion script does rgb→RGB before normalising.
-    So we must do the same here.
     """
     rgb = cv2.resize(rgb_img, (DESIRED_W, DESIRED_H),
-                         interpolation=cv2.INTER_AREA)
+                     interpolation=cv2.INTER_AREA)
     chw = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
     return chw   # (3, 84, 84)
 
@@ -86,10 +82,10 @@ def joints_to_eef(robot, q: np.ndarray):
         eef_quat      (4,)  xyzw quaternion (scipy convention)
     """
     fk  = robot.fkine(q)
-    mat = fk.A                                    # 4x4 homogeneous matrix
+    mat = fk.A
     pos = mat[:3, 3].astype(np.float32)
     quat = Rotation.from_matrix(
-        mat[:3, :3]).as_quat().astype(np.float32) # xyzw
+        mat[:3, :3]).as_quat().astype(np.float32)   # xyzw
 
     norm_pos = normalize_eef_pos(pos)
     return norm_pos, quat
@@ -104,29 +100,36 @@ class ObservationNode:
         # ── params ────────────────────────────────────────────────────────────
         self.n_obs_steps = rospy.get_param("~n_obs_steps",  2)
         self.publish_hz  = rospy.get_param("~publish_hz",   10)
+        self.robot_ip    = rospy.get_param("~robot_ip",     "10.42.0.1")
+        self.poll_hz     = rospy.get_param("~poll_hz",      100)   # joint polling rate
 
-        # Mirror the data collector's topic params exactly
-        self.cam1_topic = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
-        self.cam2_topic = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
+        self.cam1_topic  = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
+        self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
 
-        # ── FK model — same as data conversion script ─────────────────────────
+        # ── FK model ──────────────────────────────────────────────────────────
         rospy.loginfo("[ObsNode] Loading Franka FK model ...")
         self.robot = rtb.models.Panda()
         rospy.loginfo("[ObsNode] FK model ready ✓")
 
-        # ── latest snapshots (mirrors data collector pattern) ─────────────────
+        # ── connect to Polymetis ──────────────────────────────────────────────
+        rospy.loginfo(f"[ObsNode] Connecting to Polymetis @ {self.robot_ip} ...")
+        self.poly_robot   = RobotInterface(ip_address=self.robot_ip)
+        self.poly_gripper = GripperInterface(ip_address=self.robot_ip)
+        rospy.loginfo("[ObsNode] Polymetis connected ✓")
+
+        # ── latest snapshots ──────────────────────────────────────────────────
         self.latest_image_1  = None   # (H, W, 3) uint8 rgb
         self.latest_image_2  = None   # (H, W, 3) uint8 rgb
         self.latest_joints   = None   # (7,) float64
-        self.latest_gripper  = None   # (2,) float64  per-finger positions
+        self.latest_gripper  = None   # (2,) float64 per-finger positions
         self.snap_lock       = threading.Lock()
 
         # ── rolling obs buffers ───────────────────────────────────────────────
-        self.buf_cam1     = deque(maxlen=self.n_obs_steps)  # (3,84,84) float32
-        self.buf_cam2     = deque(maxlen=self.n_obs_steps)  # (3,84,84) float32
-        self.buf_eef_pos  = deque(maxlen=self.n_obs_steps)  # (3,)      float32
-        self.buf_eef_quat = deque(maxlen=self.n_obs_steps)  # (4,)      float32
-        self.buf_gripper  = deque(maxlen=self.n_obs_steps)  # (2,)      float32
+        self.buf_cam1     = deque(maxlen=self.n_obs_steps)
+        self.buf_cam2     = deque(maxlen=self.n_obs_steps)
+        self.buf_eef_pos  = deque(maxlen=self.n_obs_steps)
+        self.buf_eef_quat = deque(maxlen=self.n_obs_steps)
+        self.buf_gripper  = deque(maxlen=self.n_obs_steps)
         self.buf_lock     = threading.Lock()
 
         self.bridge = CvBridge()
@@ -138,24 +141,22 @@ class ObservationNode:
             queue_size=1
         )
 
-        # ── subscribers — same topics as data collector ───────────────────────
+        # ── camera subscribers ────────────────────────────────────────────────
         rospy.Subscriber(self.cam1_topic, Image,
                          self.cam1_callback, queue_size=1, buff_size=2**24)
-
         rospy.Subscriber(self.cam2_topic, Image,
                          self.cam2_callback, queue_size=1, buff_size=2**24)
 
-        # joints from franka_state_controller (same as collector)
-        rospy.Subscriber("/franka_state_controller/joint_states", JointState,
-                         self.joint_callback, queue_size=1)
-
-        # gripper from franka_gripper (same as collector)
-        rospy.Subscriber("/franka_gripper/joint_states", JointState,
-                         self.gripper_callback, queue_size=1)
+        # ── Polymetis polling thread ──────────────────────────────────────────
+        # Replaces /franka_state_controller/joint_states
+        # and      /franka_gripper/joint_states
+        self._poly_thread = threading.Thread(
+            target=self._polymetis_poll_loop, daemon=True
+        )
+        self._poly_thread.start()
+        rospy.loginfo("[ObsNode] Polymetis poll thread started ✓")
 
         # ── snapshot → buffer timer at publish_hz ─────────────────────────────
-        # Mirrors the data collector's timer_callback pattern:
-        # snapshot all latest values together at 10 Hz
         self.timer = rospy.Timer(
             rospy.Duration(1.0 / self.publish_hz),
             self.timer_callback
@@ -165,12 +166,48 @@ class ObservationNode:
             f"[ObsNode] Ready\n"
             f"  n_obs_steps : {self.n_obs_steps}\n"
             f"  publish_hz  : {self.publish_hz}\n"
+            f"  poll_hz     : {self.poll_hz}\n"
+            f"  robot_ip    : {self.robot_ip}\n"
             f"  cam1 (wrist)   : {self.cam1_topic}\n"
             f"  cam2 (external): {self.cam2_topic}"
         )
 
-    # ── sensor callbacks — store latest snapshot only ─────────────────────────
-    # Identical pattern to the data collector
+    # ── Polymetis polling loop ─────────────────────────────────────────────────
+
+    def _polymetis_poll_loop(self):
+        """
+        Polls Polymetis at poll_hz for joint positions and gripper state.
+        Runs in a daemon thread — replaces the two ROS joint/gripper subscribers.
+
+        robot.get_joint_positions() → (7,) tensor  joint angles in radians
+        gripper.get_state().width   → scalar        total width in metres
+                                      split /2 per finger to match
+                                      /franka_gripper/joint_states convention
+        """
+        rate = 1.0 / self.poll_hz
+        while not rospy.is_shutdown():
+            try:
+                # joints — equivalent of /franka_state_controller/joint_states
+                joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
+
+                # gripper — equivalent of /franka_gripper/joint_states
+                # get_state().width is total opening width in metres
+                # franka_gripper publishes per-finger, so divide by 2
+                gripper_state  = self.poly_gripper.get_state()
+                total_width    = float(gripper_state.width)
+                per_finger     = total_width / 2.0
+                gripper        = np.array([per_finger, per_finger], dtype=np.float64)
+
+                with self.snap_lock:
+                    self.latest_joints  = joints
+                    self.latest_gripper = gripper
+
+            except Exception as e:
+                rospy.logerr_throttle(2.0, f"[ObsNode] Polymetis poll error: {e}")
+
+            rospy.sleep(rate)
+
+    # ── camera callbacks ───────────────────────────────────────────────────────
 
     def cam1_callback(self, msg: Image):
         try:
@@ -190,24 +227,12 @@ class ObservationNode:
         except CvBridgeError as e:
             rospy.logerr(f"[ObsNode] cam2 error: {e}")
 
-    def joint_callback(self, msg: JointState):
-        if len(msg.position) >= 7:
-            with self.snap_lock:
-                self.latest_joints = np.array(msg.position[:7], dtype=np.float64)
-
-    def gripper_callback(self, msg: JointState):
-        """Gripper from /franka_gripper/joint_states — same as data collector."""
-        if len(msg.position) >= 2:
-            with self.snap_lock:
-                self.latest_gripper = np.array(msg.position[:2], dtype=np.float64)
-
-    # ── core loop — mirrors timer_callback in data collector ──────────────────
+    # ── core loop ─────────────────────────────────────────────────────────────
 
     def timer_callback(self, event=None):
         """
         Runs at 10 Hz. Snapshots all sensors, preprocesses, appends to
         rolling buffers, then publishes if buffers are full.
-        Mirrors the data collector's timer_callback exactly.
         """
         with self.snap_lock:
             img1    = self.latest_image_1
@@ -215,7 +240,6 @@ class ObservationNode:
             joints  = self.latest_joints
             gripper = self.latest_gripper
 
-        # wait for all sensors — same check as data collector
         if any(v is None for v in [img1, img2, joints, gripper]):
             rospy.logwarn_throttle(
                 2.0,
@@ -227,12 +251,11 @@ class ObservationNode:
             )
             return
 
-        # ── preprocess snapshot ───────────────────────────────────────────────
-        proc_img1 = preprocess_image(img1)                          # (3,84,84)
-        proc_img2 = preprocess_image(img2)                          # (3,84,84)
-        norm_pos, quat = joints_to_eef(self.robot, joints)         # (3,), (4,)
-        norm_gripper   = normalize_gripper(
-            gripper.astype(np.float32))                             # (2,)
+        # ── preprocess ────────────────────────────────────────────────────────
+        proc_img1 = preprocess_image(img1)
+        proc_img2 = preprocess_image(img2)
+        norm_pos, quat = joints_to_eef(self.robot, joints)
+        norm_gripper   = normalize_gripper(gripper.astype(np.float32))
 
         # ── append to rolling buffers ─────────────────────────────────────────
         with self.buf_lock:
@@ -255,16 +278,6 @@ class ObservationNode:
     # ── publisher ─────────────────────────────────────────────────────────────
 
     def _publish_obs(self):
-        """
-        Packs stacked buffers into a flat Float64MultiArray.
-
-        Flat layout (policy_node unpacks in the same order):
-            robot0_eef_pos      n_obs_steps * 3
-            robot0_eef_quat     n_obs_steps * 4
-            robot0_eef_gpos     n_obs_steps * 2
-            camera_image        n_obs_steps * 3 * 84 * 84   (cam1 = wrist)
-            camera_wrist_image  n_obs_steps * 3 * 84 * 84   (cam2 = external)
-        """
         with self.buf_lock:
             cam1     = np.stack(list(self.buf_cam1),     axis=0)  # (T,3,84,84)
             cam2     = np.stack(list(self.buf_cam2),     axis=0)  # (T,3,84,84)
@@ -273,11 +286,11 @@ class ObservationNode:
             gripper  = np.stack(list(self.buf_gripper),  axis=0)  # (T,2)
 
         data = np.concatenate([
-            eef_pos.flatten(),   # T*3
-            eef_quat.flatten(),  # T*4
-            gripper.flatten(),   # T*2
-            cam1.flatten(),      # T*3*84*84  (camera_image = wrist = cam1)
-            cam2.flatten(),      # T*3*84*84  (camera_wrist_image = external = cam2)
+            eef_pos.flatten(),
+            eef_quat.flatten(),
+            gripper.flatten(),
+            cam1.flatten(),
+            cam2.flatten(),
         ]).astype(np.float32)
 
         msg = Float64MultiArray()
