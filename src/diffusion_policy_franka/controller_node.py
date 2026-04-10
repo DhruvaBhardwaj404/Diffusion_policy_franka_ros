@@ -136,31 +136,29 @@ class FrankaController(mp.Process):
 
     def run(self):
         try:
-            print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
             robot.go_home()
 
-            # Seed interpolator from current EEF pose
-            state  = robot.get_ee_pose()
-            pos0   = state[0].numpy()
+            # seed interpolator
+            state = robot.get_ee_pose()
+            pos0 = state[0].numpy()
             q_wxyz = state[1].numpy()
             q_xyzw = np.array([q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]])
             rotvec0 = Rotation.from_quat(q_xyzw).as_rotvec()
-            pose0   = np.concatenate([pos0, rotvec0])   # (6,)
+            pose0 = np.concatenate([pos0, rotvec0])
 
             t0 = time.monotonic()
-
             mono_wall_offset = time.monotonic() - time.time()
-
             interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
             dt = 1.0 / self.interp_hz
 
+            # ── switch to streaming cartesian impedance mode ──────────────────
+            robot.start_cartesian_impedance()
+
             self.ready_event.set()
-            print(f"[FrankaController] Running at {self.interp_hz} Hz")
 
             while True:
                 t_now = time.monotonic()
-
                 last_waypoint_time = interp.times[-1]
 
                 while not self.command_queue.empty():
@@ -170,7 +168,7 @@ class FrankaController(mp.Process):
                         break
 
                     if cmd['cmd'] == Command.STOP.value:
-                        print("[FrankaController] STOP — exiting.")
+                        robot.terminate_current_policy()  # ← clean shutdown
                         return
 
                     elif cmd['cmd'] == Command.SCHEDULE_WAYPOINT.value:
@@ -192,32 +190,24 @@ class FrankaController(mp.Process):
                         )
                         last_waypoint_time = interp.times[-1]
 
+                # ── just update desired pose, impedance handles the rest ──────
                 pose_now = interp(t_now)
-                pose_next = interp(t_now + dt)
-
                 pos = pose_now[:3]
                 rotvec = pose_now[3:]
-
-                vel_linear = (pose_next[:3] - pose_now[:3]) / dt
-                vel_angular = (pose_next[3:] - pose_now[3:]) / dt
 
                 q_xyzw = Rotation.from_rotvec(rotvec).as_quat()
                 q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
 
-                robot.move_to_ee_pose(
+                robot.update_desired_ee_pose(
                     position=torch.tensor(pos, dtype=torch.float32),
                     orientation=torch.tensor(q_wxyz, dtype=torch.float32),
-                    time_to_go=dt,
-                    ee_linear_vel=torch.tensor(vel_linear, dtype=torch.float32),
-                    ee_angular_vel=torch.tensor(vel_angular, dtype=torch.float32),
                 )
 
                 if self.verbose:
-                    print(f"[FrankaController] pos={np.round(pos, 4)} vel={np.round(vel_linear, 4)}")
+                    print(f"[FrankaController] pos={np.round(pos, 4)}")
 
                 elapsed = time.monotonic() - t_now
                 time.sleep(max(0.0, dt - elapsed))
-
         except Exception as e:
             print(f"[FrankaController] CRASHED: {e}")
             import traceback
