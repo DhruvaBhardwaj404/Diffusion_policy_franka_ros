@@ -162,6 +162,9 @@ class FrankaController(mp.Process):
             print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
 
+            HOME_JOINTS = torch.tensor([2.79, 0.39, -2.636, -2.22, 0.167, 2.041, 0.925], dtype=torch.float32)
+            robot.move_to_joint_positions(HOME_JOINTS, time_to_go=5.0)
+
             state = robot.get_ee_pose()
             pos0 = state[0].numpy()
             q_wxyz = state[1].numpy()
@@ -311,6 +314,8 @@ class ControllerNode:
         else:
             self.gripper = HardwareGripper(robot_ip=robot_ip)
 
+        self.gripper.command(1)
+
         rospy.Subscriber(
             "/diffusion_policy/action_chunk",
             Float64MultiArray,
@@ -368,7 +373,7 @@ class ControllerNode:
         for i in range(n_steps):
             if rospy.is_shutdown():
                 break
-            self.gripper.command(int(round(gripper[i])))
+            self.gripper.command(1 if gripper[i] > 0 else 0)
             rate.sleep()
 
     def spin(self):
