@@ -23,17 +23,11 @@ from polymetis import GripperInterface
 EEF_POS_LOWER_LIMITS = np.array([0.3,  0.02, 0.07], dtype=np.float64)
 EEF_POS_UPPER_LIMITS = np.array([0.65, 0.25, 0.55], dtype=np.float64)
 
-# ── BBOX: Collision bounding box in robot base frame (metres) ─────────────────
-# Adjust these to match your physical workspace.
-# These are ABSOLUTE limits (not normalised) — same frame as robot EEF position.
 BBOX_LOWER = np.array([-0.4,  -0.6, 0.038], dtype=np.float64)  # x_min, y_min, z_min
 BBOX_UPPER = np.array([1,   0.6, 1.2], dtype=np.float64)  # x_max, y_max, z_max
 
-# ── BBOX: What to do when a waypoint is out of bounds ─────────────────────────
-#   "skip"  — drop the waypoint entirely, log a warning
-#   "clamp" — clamp position to bbox boundary, keep orientation & gripper
-BBOX_VIOLATION_MODE = "clamp"   # change to "skip" if you prefer hard rejection
-# ─────────────────────────────────────────────────────────────────────────────
+
+BBOX_VIOLATION_MODE = "clamp"
 
 GRIPPER_OPEN_WIDTH  = 0.08
 GRIPPER_CLOSE_WIDTH = 0.04
