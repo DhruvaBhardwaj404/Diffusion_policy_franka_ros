@@ -30,7 +30,7 @@ import multiprocessing as mp
 import time
 import threading
 import sys
-sys.path.insert(0, '/media/prabhav/SATA_SSD/dhruv/Diffusion-Transformer')
+sys.path.insert(0, '/home/franka_02/Desktop/Dhruva_MTP/Diffusion-Transformer')
 import numpy as np
 import rospy
 from scipy.spatial.transform import Rotation
