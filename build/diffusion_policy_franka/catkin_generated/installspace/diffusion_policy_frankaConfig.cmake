@@ -67,14 +67,14 @@ set(diffusion_policy_franka_CONFIG_INCLUDED TRUE)
 
 # set variables for source/devel/install prefixes
 if("FALSE" STREQUAL "TRUE")
-  set(diffusion_policy_franka_SOURCE_PREFIX /home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka)
-  set(diffusion_policy_franka_DEVEL_PREFIX /home/dhruv/Diffusion_policy_franka_ros/devel)
+  set(diffusion_policy_franka_SOURCE_PREFIX /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src/diffusion_policy_franka)
+  set(diffusion_policy_franka_DEVEL_PREFIX /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/devel)
   set(diffusion_policy_franka_INSTALL_PREFIX "")
   set(diffusion_policy_franka_PREFIX ${diffusion_policy_franka_DEVEL_PREFIX})
 else()
   set(diffusion_policy_franka_SOURCE_PREFIX "")
   set(diffusion_policy_franka_DEVEL_PREFIX "")
-  set(diffusion_policy_franka_INSTALL_PREFIX /home/dhruv/Diffusion_policy_franka_ros/install)
+  set(diffusion_policy_franka_INSTALL_PREFIX /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/install)
   set(diffusion_policy_franka_PREFIX ${diffusion_policy_franka_INSTALL_PREFIX})
 endif()
 
@@ -154,7 +154,7 @@ foreach(library ${libraries})
     set(lib_path "")
     set(lib "${library}-NOTFOUND")
     # since the path where the library is found is returned we have to iterate over the paths manually
-    foreach(path /home/dhruv/Diffusion_policy_franka_ros/install/lib;/home/dhruv/Diffusion_policy_franka_ros/devel/lib;/opt/ros/noetic/lib)
+    foreach(path /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/install/lib;/home/franka_02/catkin_ws/devel/lib;/home/franka_02/catkin_ws/devel/.private/catkin_tools_prebuild/lib;/opt/ros/noetic/lib)
       find_library(lib ${library}
         PATHS ${path}
         NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)

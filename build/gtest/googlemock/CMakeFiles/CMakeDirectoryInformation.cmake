@@ -3,7 +3,7 @@
 
 # Relative path conversion top directories.
 set(CMAKE_RELATIVE_PATH_TOP_SOURCE "/usr/src/googletest")
-set(CMAKE_RELATIVE_PATH_TOP_BINARY "/home/dhruv/Diffusion_policy_franka_ros/build")
+set(CMAKE_RELATIVE_PATH_TOP_BINARY "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build")
 
 # Force unix paths in dependencies.
 set(CMAKE_FORCE_UNIX_PATHS 1)

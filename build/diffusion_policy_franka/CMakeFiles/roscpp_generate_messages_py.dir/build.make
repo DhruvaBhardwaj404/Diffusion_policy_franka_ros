@@ -44,19 +44,19 @@ cmake_force:
 SHELL = /bin/sh
 
 # The CMake executable.
-CMAKE_COMMAND = /home/dhruv/miniconda3/envs/robo/bin/cmake
+CMAKE_COMMAND = /home/franka_02/miniconda3/envs/robo/bin/cmake
 
 # The command to remove a file.
-RM = /home/dhruv/miniconda3/envs/robo/bin/cmake -E rm -f
+RM = /home/franka_02/miniconda3/envs/robo/bin/cmake -E rm -f
 
 # Escaping for special characters.
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/dhruv/Diffusion_policy_franka_ros/src
+CMAKE_SOURCE_DIR = /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/dhruv/Diffusion_policy_franka_ros/build
+CMAKE_BINARY_DIR = /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build
 
 # Utility rule file for roscpp_generate_messages_py.
 
@@ -74,10 +74,10 @@ diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/build: roscpp
 .PHONY : diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/build
 
 diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/clean:
-	cd /home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka && $(CMAKE_COMMAND) -P CMakeFiles/roscpp_generate_messages_py.dir/cmake_clean.cmake
+	cd /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka && $(CMAKE_COMMAND) -P CMakeFiles/roscpp_generate_messages_py.dir/cmake_clean.cmake
 .PHONY : diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/clean
 
 diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/depend:
-	cd /home/dhruv/Diffusion_policy_franka_ros/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/dhruv/Diffusion_policy_franka_ros/src /home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka /home/dhruv/Diffusion_policy_franka_ros/build /home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka /home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src/diffusion_policy_franka /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : diffusion_policy_franka/CMakeFiles/roscpp_generate_messages_py.dir/depend
 

@@ -1,8 +1,8 @@
-# Install script for directory: /home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka
+# Install script for directory: /home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src/diffusion_policy_franka
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/dhruv/Diffusion_policy_franka_ros/install")
+  set(CMAKE_INSTALL_PREFIX "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/install")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -43,32 +43,32 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka/cmake" TYPE FILE FILES
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
+    "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
+    "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
     )
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka/cmake" TYPE FILE FILES
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
+    "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
+    "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
     )
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
 endif()
 

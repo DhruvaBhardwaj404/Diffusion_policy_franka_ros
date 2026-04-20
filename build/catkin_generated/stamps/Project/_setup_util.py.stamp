@@ -1,4 +1,4 @@
-#!/home/dhruv/miniconda3/envs/robo/bin/python3
+#!/home/franka_02/miniconda3/envs/robo/bin/python3
 # -*- coding: utf-8 -*-
 
 # Software License Agreement (BSD License)
@@ -268,7 +268,7 @@ if __name__ == '__main__':
 
         if not args.local:
             # environment at generation time
-            CMAKE_PREFIX_PATH = r'/home/dhruv/Diffusion_policy_franka_ros/devel;/opt/ros/noetic'.split(';')
+            CMAKE_PREFIX_PATH = r'/home/franka_02/catkin_ws/devel;/home/franka_02/catkin_ws/devel/.private/catkin_tools_prebuild;/opt/ros/noetic'.split(';')
         else:
             # don't consider any other prefix path than this one
             CMAKE_PREFIX_PATH = []

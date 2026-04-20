@@ -1,4 +1,4 @@
-prefix=/home/dhruv/Diffusion_policy_franka_ros/devel
+prefix=/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/devel
 
 Name: diffusion_policy_franka
 Description: Description of diffusion_policy_franka

@@ -7,8 +7,8 @@
 # new environment variables
 
 # modified environment variables
-export LD_LIBRARY_PATH='/opt/ros/noetic/lib:/opt/ros/noetic/lib/x86_64-linux-gnu:/usr/local/cuda-11.3/lib64:/usr/local/cuda-11.2/lib'
-export PATH='/opt/ros/noetic/bin:/usr/local/cuda-11.3/bin:/home/dhruv/miniconda3/envs/robo/bin:/home/dhruv/miniconda3/condabin:/usr/java/jdk1.8.0_321/bin:/usr/local/cuda-11.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/dhruv/.dotnet/tools'
-export PKG_CONFIG_PATH='/opt/ros/noetic/lib/pkgconfig:/opt/ros/noetic/lib/x86_64-linux-gnu/pkgconfig'
-export PWD='/home/dhruv/Diffusion_policy_franka_ros/build'
-export PYTHONPATH='/home/dhruv/fairo/polymetis:/home/dhruv/fairo/polymetis:/opt/ros/noetic/lib/python3/dist-packages:/home/dhruv/fairo/polymetis/polymetis/python'
+export CMAKE_PREFIX_PATH="/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/devel:$CMAKE_PREFIX_PATH"
+export PATH='/opt/ros/noetic/bin:/home/franka_02/miniconda3/envs/robo/bin:/home/franka_02/miniconda3/condabin:/home/franka_02/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'
+export PWD='/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/build'
+export ROSLISP_PACKAGE_DIRECTORIES="/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/devel/share/common-lisp:$ROSLISP_PACKAGE_DIRECTORIES"
+export ROS_PACKAGE_PATH="/home/franka_02/Desktop/Dhruva_MTP/Diffusion_policy_franka_ros/src:$ROS_PACKAGE_PATH"

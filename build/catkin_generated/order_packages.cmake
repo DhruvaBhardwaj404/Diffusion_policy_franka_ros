@@ -11,4 +11,4 @@ list(APPEND CATKIN_ORDERED_PACKAGES_BUILD_TYPE "catkin")
 
 set(CATKIN_MESSAGE_GENERATORS )
 
-set(CATKIN_METAPACKAGE_CMAKE_TEMPLATE "/home/dhruv/miniconda3/envs/robo/lib/python3.9/site-packages/catkin_pkg/templates/metapackage.cmake.in")
+set(CATKIN_METAPACKAGE_CMAKE_TEMPLATE "/home/franka_02/miniconda3/envs/robo/lib/python3.9/site-packages/catkin_pkg/templates/metapackage.cmake.in")
