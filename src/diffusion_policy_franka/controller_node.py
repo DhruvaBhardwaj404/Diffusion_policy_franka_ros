@@ -106,7 +106,7 @@ class HardwareGripper:
     def __init__(self, robot_ip: str):
         print(f"[Gripper] Connecting to {robot_ip} ...")
         self.gripper   = GripperInterface(ip_address=robot_ip)
-        self.is_closed = False
+        self.is_closed = True
         print("[Gripper] Ready ✓")
 
     def command(self, state: int):
