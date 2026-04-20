@@ -23,8 +23,8 @@ from polymetis import GripperInterface
 EEF_POS_LOWER_LIMITS = np.array([0.3,  0.02, 0.07], dtype=np.float64)
 EEF_POS_UPPER_LIMITS = np.array([0.65, 0.25, 0.55], dtype=np.float64)
 
-BBOX_LOWER = np.array([-0.4,  -0.6, 0.038], dtype=np.float64)  # x_min, y_min, z_min
-BBOX_UPPER = np.array([1,   0.6, 1.2], dtype=np.float64)  # x_max, y_max, z_max
+BBOX_LOWER = np.array([-0.3,  -0.3, 0.1], dtype=np.float64)  # x_min, y_min, z_min
+BBOX_UPPER = np.array([0.8,   0.5, 0.7], dtype=np.float64)  # x_max, y_max, z_max
 
 
 BBOX_VIOLATION_MODE = "clamp"

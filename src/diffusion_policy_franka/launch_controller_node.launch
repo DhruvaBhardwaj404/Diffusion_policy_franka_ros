@@ -22,8 +22,8 @@
   <arg name="robot_ip"/>
 
   <!-- speed limits — start conservative -->
-  <arg name="max_pos_speed"       default="0.25"/>
-  <arg name="max_rot_speed"       default="0.6"/>
+  <arg name="max_pos_speed"       default="0.1"/>
+  <arg name="max_rot_speed"       default="0.2"/>
 
 
   <!-- ── controller_node ───────────────────────────────────────────── -->
