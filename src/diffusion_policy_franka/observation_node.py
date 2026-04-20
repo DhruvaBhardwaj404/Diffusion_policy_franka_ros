@@ -10,11 +10,11 @@ Data collector → HDF5 conversion → This node (must all match)
 Topic mapping (from data collector):
     cam1  /eih/color/image_raw   → images1 → camera_image        (wrist)
     cam2  /ext/color/image_raw   → images2 → camera_wrist_image  (external)
-    joints + gripper now polled directly from Polymetis
+    joints + gripper polled directly from Polymetis
 
 Preprocessing applied (matching data conversion script):
-    Images : rgb8 → resize 84x84 INTER_AREA → rgb2RGB → /255 → CHW float32
-    EEF    : FK via roboticstoolbox Panda → normalize_eef_pos()
+    Images : bgr8 → BGR2RGB → resize 84x84 INTER_AREA → /255 → CHW float32
+    EEF    : FK via Polymetis RobotModelPinocchio → normalize_eef_pos() + normalise_eef_euler()
     Gripper: normalize_gripper() per finger
 
 Published topics:
@@ -26,32 +26,46 @@ from collections import deque
 
 import cv2
 import numpy as np
+import torch
 import rospy
-import roboticstoolbox as rtb
 from cv_bridge import CvBridge, CvBridgeError
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension
 from polymetis import RobotInterface, GripperInterface
+from torchcontrol.models import RobotModelPinocchio
 
 
 # ── Normalisation constants — must match data conversion script exactly ────────
 
-DESIRED_H = 84
-DESIRED_W = 84
+DESIRED_H = 240
+DESIRED_W  = 320
 
-EEF_POS_LOWER_LIMITS  = np.array([0.3,  0.02, 0.07],        dtype=np.float32)
-EEF_POS_UPPER_LIMITS  = np.array([0.65, 0.25, 0.55],        dtype=np.float32)
+EEF_POS_LOWER_LIMITS   = np.array([ 0.15, -0.12,  0.13], dtype=np.float32)
+EEF_POS_UPPER_LIMITS   = np.array([ 0.65,  0.30,  0.60], dtype=np.float32)
 
-ROBOT_FINGER_OPEN     = 0.041   # metres
-ROBOT_FINGER_CLOSED   = 0.018   # metres
+EEF_EULER_LOWER_LIMITS = np.array([-3.1416, -0.35, -2.40], dtype=np.float32)
+EEF_EULER_UPPER_LIMITS = np.array([ 3.1416,  0.40,  0.25], dtype=np.float32)
+
+ROBOT_FINGER_OPEN   = 0.045   # metres
+ROBOT_FINGER_CLOSED = 0.015   # metres
+
+# URDF for offline FK — must be the same URDF used during data conversion
+URDF_PATH    = rospy.get_param("/observation_node/urdf_path",
+                               "path/to/panda.urdf")   # override via ROS param
+EE_LINK_NAME = "panda_hand"
 
 
-# ── Preprocessing (identical to data conversion script) ───────────────────────
+# ── Normalisation (identical to data conversion script) ───────────────────────
 
 def normalize_eef_pos(pos: np.ndarray) -> np.ndarray:
     pos_range = EEF_POS_UPPER_LIMITS - EEF_POS_LOWER_LIMITS
     return 2.0 * (pos - EEF_POS_LOWER_LIMITS) / pos_range - 1.0
+
+
+def normalise_eef_euler(euler: np.ndarray) -> np.ndarray:
+    euler_range = EEF_EULER_UPPER_LIMITS - EEF_EULER_LOWER_LIMITS
+    return 2.0 * (euler - EEF_EULER_LOWER_LIMITS) / euler_range - 1.0
 
 
 def normalize_gripper(gripper_pos: np.ndarray) -> np.ndarray:
@@ -61,34 +75,52 @@ def normalize_gripper(gripper_pos: np.ndarray) -> np.ndarray:
     return 2.0 * (gripper_pos - ROBOT_FINGER_CLOSED) / gripper_range - 1.0
 
 
-def preprocess_image(rgb_img: np.ndarray) -> np.ndarray:
+# ── Image preprocessing (identical to resize_images() in converter) ───────────
+
+def preprocess_image(bgr_img: np.ndarray) -> np.ndarray:
     """
+    (H, W, 3) uint8 BGR  →  (3, DESIRED_H, DESIRED_W) float32 [0,1] RGB CHW
+
     Matches resize_images() in data conversion script exactly:
-      (H, W, 3) uint8 rgb  →  (3, 84, 84) float32 [0,1] RGB CHW
+      - BGR → RGB  (camera publishes bgr8, same as data collector)
+      - resize to DESIRED_H x DESIRED_W with INTER_AREA
+      - /255 normalise
+      - HWC → CHW transpose
     """
-    rgb = cv2.resize(rgb_img, (DESIRED_W, DESIRED_H),
-                     interpolation=cv2.INTER_AREA)
-    chw = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
-    return chw   # (3, 84, 84)
+    resized = cv2.resize(bgr_img, (DESIRED_W, DESIRED_H),
+                         interpolation=cv2.INTER_AREA)
+    rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    chw     = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
+    return chw   # (3, DESIRED_H, DESIRED_W)
 
 
-def joints_to_eef(robot, q: np.ndarray):
+# ── FK via Polymetis (identical to joints_to_eef() in converter) ──────────────
+
+def joints_to_eef(robot_model, q: np.ndarray):
     """
-    Forward kinematics via roboticstoolbox — identical to joints_to_eef()
-    in the data conversion script.
+    Forward kinematics via Polymetis RobotModelPinocchio.
+    Matches joints_to_eef() in the data conversion script exactly.
+
+    Args:
+        robot_model : RobotModelPinocchio instance
+        q           : (7,) float64 joint angles [rad]
 
     Returns:
-        norm_eef_pos  (3,)  normalised xyz
-        eef_quat      (4,)  xyzw quaternion (scipy convention)
+        norm_eef_pos   (3,)  normalised xyz
+        norm_eef_euler (3,)  normalised XYZ euler [rad]
+        eef_quat       (4,)  raw xyzw quaternion
     """
-    fk  = robot.fkine(q)
-    mat = fk.A
-    pos = mat[:3, 3].astype(np.float32)
-    quat = Rotation.from_matrix(
-        mat[:3, :3]).as_quat().astype(np.float32)   # xyzw
+    joint_tensor = torch.tensor(q, dtype=torch.float32)
+    pos_t, quat_t = robot_model.forward_kinematics(joint_tensor)
 
-    norm_pos = normalize_eef_pos(pos)
-    return norm_pos, quat
+    pos  = pos_t.detach().numpy().astype(np.float32)
+    quat = quat_t.detach().numpy().astype(np.float32)          # xyzw
+    euler = R.from_quat(quat).as_euler("xyz", degrees=False).astype(np.float32)
+
+    norm_pos   = normalize_eef_pos(pos)
+    norm_euler = normalise_eef_euler(euler)
+
+    return norm_pos, norm_euler, quat
 
 
 # ── ROS Node ──────────────────────────────────────────────────────────────────
@@ -101,14 +133,16 @@ class ObservationNode:
         self.n_obs_steps = rospy.get_param("~n_obs_steps",  2)
         self.publish_hz  = rospy.get_param("~publish_hz",   10)
         self.robot_ip    = rospy.get_param("~robot_ip",     "10.42.0.1")
-        self.poll_hz     = rospy.get_param("~poll_hz",      100)   # joint polling rate
+        self.poll_hz     = rospy.get_param("~poll_hz",      100)
+        self.urdf_path   = rospy.get_param("~urdf_path",    URDF_PATH)
+        self.ee_link     = rospy.get_param("~ee_link",      EE_LINK_NAME)
 
         self.cam1_topic  = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
         self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
 
-        # ── FK model ──────────────────────────────────────────────────────────
-        rospy.loginfo("[ObsNode] Loading Franka FK model ...")
-        self.robot = rtb.models.Panda()
+        # ── FK model (Polymetis Pinocchio — same as converter) ────────────────
+        rospy.loginfo(f"[ObsNode] Loading Pinocchio model: {self.urdf_path} (ee: {self.ee_link})")
+        self.robot_model = RobotModelPinocchio(self.urdf_path, self.ee_link)
         rospy.loginfo("[ObsNode] FK model ready ✓")
 
         # ── connect to Polymetis ──────────────────────────────────────────────
@@ -118,45 +152,44 @@ class ObservationNode:
         rospy.loginfo("[ObsNode] Polymetis connected ✓")
 
         # ── latest snapshots ──────────────────────────────────────────────────
-        self.latest_image_1  = None   # (H, W, 3) uint8 rgb
-        self.latest_image_2  = None   # (H, W, 3) uint8 rgb
+        self.latest_image_1  = None   # (H, W, 3) uint8 BGR
+        self.latest_image_2  = None   # (H, W, 3) uint8 BGR
         self.latest_joints   = None   # (7,) float64
         self.latest_gripper  = None   # (2,) float64 per-finger positions
         self.snap_lock       = threading.Lock()
 
         # ── rolling obs buffers ───────────────────────────────────────────────
-        self.buf_cam1     = deque(maxlen=self.n_obs_steps)
-        self.buf_cam2     = deque(maxlen=self.n_obs_steps)
-        self.buf_eef_pos  = deque(maxlen=self.n_obs_steps)
-        self.buf_eef_quat = deque(maxlen=self.n_obs_steps)
-        self.buf_gripper  = deque(maxlen=self.n_obs_steps)
-        self.buf_lock     = threading.Lock()
+        self.buf_cam1      = deque(maxlen=self.n_obs_steps)
+        self.buf_cam2      = deque(maxlen=self.n_obs_steps)
+        self.buf_eef_pos   = deque(maxlen=self.n_obs_steps)
+        self.buf_eef_euler = deque(maxlen=self.n_obs_steps)
+        self.buf_eef_quat  = deque(maxlen=self.n_obs_steps)
+        self.buf_gripper   = deque(maxlen=self.n_obs_steps)
+        self.buf_lock      = threading.Lock()
 
         self.bridge = CvBridge()
 
-        # ── publishers ────────────────────────────────────────────────────────
+        # ── publisher ─────────────────────────────────────────────────────────
         self.obs_pub = rospy.Publisher(
             "/diffusion_policy/observation",
             Float64MultiArray,
             queue_size=1
         )
 
-        # ── camera subscribers ────────────────────────────────────────────────
+        # ── camera subscribers (bgr8 — matches data collector exactly) ────────
         rospy.Subscriber(self.cam1_topic, Image,
                          self.cam1_callback, queue_size=1, buff_size=2**24)
         rospy.Subscriber(self.cam2_topic, Image,
                          self.cam2_callback, queue_size=1, buff_size=2**24)
 
         # ── Polymetis polling thread ──────────────────────────────────────────
-        # Replaces /franka_state_controller/joint_states
-        # and      /franka_gripper/joint_states
         self._poly_thread = threading.Thread(
             target=self._polymetis_poll_loop, daemon=True
         )
         self._poly_thread.start()
         rospy.loginfo("[ObsNode] Polymetis poll thread started ✓")
 
-        # ── snapshot → buffer timer at publish_hz ─────────────────────────────
+        # ── snapshot → buffer timer ───────────────────────────────────────────
         self.timer = rospy.Timer(
             rospy.Duration(1.0 / self.publish_hz),
             self.timer_callback
@@ -168,6 +201,8 @@ class ObservationNode:
             f"  publish_hz  : {self.publish_hz}\n"
             f"  poll_hz     : {self.poll_hz}\n"
             f"  robot_ip    : {self.robot_ip}\n"
+            f"  urdf        : {self.urdf_path}\n"
+            f"  ee_link     : {self.ee_link}\n"
             f"  cam1 (wrist)   : {self.cam1_topic}\n"
             f"  cam2 (external): {self.cam2_topic}"
         )
@@ -176,27 +211,17 @@ class ObservationNode:
 
     def _polymetis_poll_loop(self):
         """
-        Polls Polymetis at poll_hz for joint positions and gripper state.
-        Runs in a daemon thread — replaces the two ROS joint/gripper subscribers.
-
-        robot.get_joint_positions() → (7,) tensor  joint angles in radians
-        gripper.get_state().width   → scalar        total width in metres
-                                      split /2 per finger to match
-                                      /franka_gripper/joint_states convention
+        Polls Polymetis at poll_hz for joint positions and gripper width.
+        gripper.get_state().width → total width → split /2 per finger
         """
         rate = 1.0 / self.poll_hz
         while not rospy.is_shutdown():
             try:
-                # joints — equivalent of /franka_state_controller/joint_states
                 joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
 
-                # gripper — equivalent of /franka_gripper/joint_states
-                # get_state().width is total opening width in metres
-                # franka_gripper publishes per-finger, so divide by 2
-                gripper_state  = self.poly_gripper.get_state()
-                total_width    = float(gripper_state.width)
-                per_finger     = total_width / 2.0
-                gripper        = np.array([per_finger, per_finger], dtype=np.float64)
+                gripper_state = self.poly_gripper.get_state()
+                per_finger    = float(gripper_state.width) / 2.0
+                gripper       = np.array([per_finger, per_finger], dtype=np.float64)
 
                 with self.snap_lock:
                     self.latest_joints  = joints
@@ -207,33 +232,29 @@ class ObservationNode:
 
             rospy.sleep(rate)
 
-    # ── camera callbacks ───────────────────────────────────────────────────────
+    # ── camera callbacks — force bgr8 to match data collector ─────────────────
 
     def cam1_callback(self, msg: Image):
         try:
-            rgb = self.bridge.imgmsg_to_cv2(msg)
-            if rgb is not None and rgb.size > 0:
+            bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")   # force BGR like data collector
+            if bgr is not None and bgr.size > 0:
                 with self.snap_lock:
-                    self.latest_image_1 = np.array(rgb, dtype=np.uint8)
+                    self.latest_image_1 = np.array(bgr, dtype=np.uint8)
         except CvBridgeError as e:
             rospy.logerr(f"[ObsNode] cam1 error: {e}")
 
     def cam2_callback(self, msg: Image):
         try:
-            rgb = self.bridge.imgmsg_to_cv2(msg)
-            if rgb is not None and rgb.size > 0:
+            bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")   # force BGR like data collector
+            if bgr is not None and bgr.size > 0:
                 with self.snap_lock:
-                    self.latest_image_2 = np.array(rgb, dtype=np.uint8)
+                    self.latest_image_2 = np.array(bgr, dtype=np.uint8)
         except CvBridgeError as e:
             rospy.logerr(f"[ObsNode] cam2 error: {e}")
 
     # ── core loop ─────────────────────────────────────────────────────────────
 
     def timer_callback(self, event=None):
-        """
-        Runs at 10 Hz. Snapshots all sensors, preprocesses, appends to
-        rolling buffers, then publishes if buffers are full.
-        """
         with self.snap_lock:
             img1    = self.latest_image_1
             img2    = self.latest_image_2
@@ -251,25 +272,25 @@ class ObservationNode:
             )
             return
 
-        # ── preprocess ────────────────────────────────────────────────────────
-        proc_img1 = preprocess_image(img1)
-        proc_img2 = preprocess_image(img2)
-        norm_pos, quat = joints_to_eef(self.robot, joints)
-        norm_gripper   = normalize_gripper(gripper.astype(np.float32))
+        # ── preprocess — matches converter exactly ─────────────────────────
+        proc_img1                    = preprocess_image(img1)   # BGR input
+        proc_img2                    = preprocess_image(img2)   # BGR input
+        norm_pos, norm_euler, quat   = joints_to_eef(self.robot_model, joints)
+        norm_gripper                 = normalize_gripper(gripper.astype(np.float32))
 
-        # ── append to rolling buffers ─────────────────────────────────────────
+        # ── append to rolling buffers ──────────────────────────────────────
         with self.buf_lock:
             self.buf_cam1.append(proc_img1)
             self.buf_cam2.append(proc_img2)
             self.buf_eef_pos.append(norm_pos)
+            self.buf_eef_euler.append(norm_euler)
             self.buf_eef_quat.append(quat)
             self.buf_gripper.append(norm_gripper)
             buf_len = len(self.buf_cam1)
 
         if buf_len < self.n_obs_steps:
             rospy.logwarn_throttle(
-                2.0,
-                f"[ObsNode] Buffer filling: {buf_len}/{self.n_obs_steps}"
+                2.0, f"[ObsNode] Buffer filling: {buf_len}/{self.n_obs_steps}"
             )
             return
 
@@ -278,15 +299,26 @@ class ObservationNode:
     # ── publisher ─────────────────────────────────────────────────────────────
 
     def _publish_obs(self):
+        """
+        Flat layout (must match eval_real.flat_msg_to_obs_dict exactly):
+            robot0_eef_pos      T * 3
+            robot0_eef_euler    T * 3   (normalised, replaces quat)
+            robot0_eef_quat     T * 4   (raw, for reference)
+            robot0_eef_gpos     T * 2
+            camera_image        T * 3 * DESIRED_H * DESIRED_W
+            camera_wrist_image  T * 3 * DESIRED_H * DESIRED_W
+        """
         with self.buf_lock:
-            cam1     = np.stack(list(self.buf_cam1),     axis=0)  # (T,3,84,84)
-            cam2     = np.stack(list(self.buf_cam2),     axis=0)  # (T,3,84,84)
-            eef_pos  = np.stack(list(self.buf_eef_pos),  axis=0)  # (T,3)
-            eef_quat = np.stack(list(self.buf_eef_quat), axis=0)  # (T,4)
-            gripper  = np.stack(list(self.buf_gripper),  axis=0)  # (T,2)
+            cam1      = np.stack(list(self.buf_cam1),      axis=0)  # (T,3,H,W)
+            cam2      = np.stack(list(self.buf_cam2),      axis=0)  # (T,3,H,W)
+            eef_pos   = np.stack(list(self.buf_eef_pos),   axis=0)  # (T,3)
+            eef_euler = np.stack(list(self.buf_eef_euler), axis=0)  # (T,3)
+            eef_quat  = np.stack(list(self.buf_eef_quat),  axis=0)  # (T,4)
+            gripper   = np.stack(list(self.buf_gripper),   axis=0)  # (T,2)
 
         data = np.concatenate([
             eef_pos.flatten(),
+            eef_euler.flatten(),
             eef_quat.flatten(),
             gripper.flatten(),
             cam1.flatten(),
