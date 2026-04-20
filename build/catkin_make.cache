@@ -1,2 +1,2 @@
 diffusion_policy_franka
--DCATKIN_DEVEL_PREFIX=/home/dhruv/Diffusion_policy_franka_ros/devel -DCMAKE_INSTALL_PREFIX=/home/dhruv/Diffusion_policy_franka_ros/install -G Unix Makefiles
+-DCATKIN_DEVEL_PREFIX=/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/devel -DCMAKE_INSTALL_PREFIX=/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/install -G Unix Makefiles

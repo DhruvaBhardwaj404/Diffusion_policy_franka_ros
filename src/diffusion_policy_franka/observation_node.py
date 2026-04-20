@@ -208,26 +208,60 @@ class ObservationNode:
 
     # ── Polymetis polling loop ─────────────────────────────────────────────────
 
+    # def _polymetis_poll_loop(self):
+    #     """
+    #     Polls Polymetis at poll_hz for joint positions and gripper width.
+    #     gripper.get_state().width → total width → split /2 per finger
+    #     """
+    #     rate = 1.0 / self.poll_hz
+    #     while not rospy.is_shutdown():
+    #         try:
+    #             joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
+
+    #             gripper_state = self.poly_gripper.get_state()
+    #             per_finger    = float(gripper_state.width) / 2.0
+    #             gripper       = np.array([per_finger, per_finger], dtype=np.float64)
+
+    #             with self.snap_lock:
+    #                 self.latest_joints  = joints
+    #                 self.latest_gripper = gripper
+
+    #         except Exception as e:
+    #             rospy.logerr_throttle(2.0, f"[ObsNode] Polymetis poll error: {e}")
+
+    #         rospy.sleep(rate)
+
     def _polymetis_poll_loop(self):
         """
         Polls Polymetis at poll_hz for joint positions and gripper width.
-        gripper.get_state().width → total width → split /2 per finger
+        If the gripper server is missing (common in sim), mocks the gripper open state.
         """
         rate = 1.0 / self.poll_hz
         while not rospy.is_shutdown():
+            
+            # 1. Try to get arm joints
             try:
                 joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
+            except Exception as e:
+                rospy.logerr_throttle(2.0, f"[ObsNode] ARM poll error: {e}")
+                rospy.sleep(rate)
+                continue  # Skip updating if we don't have arm joints
 
+            # 2. Try to get gripper state
+            try:
                 gripper_state = self.poly_gripper.get_state()
                 per_finger    = float(gripper_state.width) / 2.0
                 gripper       = np.array([per_finger, per_finger], dtype=np.float64)
-
-                with self.snap_lock:
-                    self.latest_joints  = joints
-                    self.latest_gripper = gripper
-
             except Exception as e:
-                rospy.logerr_throttle(2.0, f"[ObsNode] Polymetis poll error: {e}")
+                rospy.logwarn_throttle(5.0, f"[ObsNode] GRIPPER poll error. Mocking open gripper. (Ignore if in sim)")
+                # Mock gripper as fully open for simulation
+                mock_finger = ROBOT_FINGER_OPEN / 2.0
+                gripper     = np.array([mock_finger, mock_finger], dtype=np.float64)
+
+            # 3. Update buffers
+            with self.snap_lock:
+                self.latest_joints  = joints
+                self.latest_gripper = gripper
 
             rospy.sleep(rate)
 

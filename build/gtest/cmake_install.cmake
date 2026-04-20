@@ -2,7 +2,7 @@
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/dhruv/Diffusion_policy_franka_ros/install")
+  set(CMAKE_INSTALL_PREFIX "/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/install")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -37,14 +37,9 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
   set(CMAKE_CROSSCOMPILING "FALSE")
 endif()
 
-# Set default install directory permissions.
-if(NOT DEFINED CMAKE_OBJDUMP)
-  set(CMAKE_OBJDUMP "/usr/bin/objdump")
-endif()
-
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/dhruv/Diffusion_policy_franka_ros/build/gtest/googlemock/cmake_install.cmake")
+  include("/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/gtest/googlemock/cmake_install.cmake")
 
 endif()
 

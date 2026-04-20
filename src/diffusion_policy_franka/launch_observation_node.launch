@@ -20,7 +20,7 @@
   <arg name="interp_hz"           default="200.0"/>
 
   <!-- RT machine IP — always required for hardware mode -->
-  <arg name="robot_ip"/>
+  <arg name="robot_ip" default="10.42.0.2"/>
 
   <!-- camera topics — must match data collector exactly -->
   <arg name="cam1_topic"          default="/eih/color/image_raw"/>
@@ -41,6 +41,7 @@
     <param name="cam1_topic"  value="$(arg cam1_topic)"/>
     <param name="cam2_topic"  value="$(arg cam2_topic)"/>
     <param name="urdf_path"   value="$(arg urdf_path)"/>
+    <param name="robot_ip"   value="$(arg robot_ip)"/>
   </node>
 
 

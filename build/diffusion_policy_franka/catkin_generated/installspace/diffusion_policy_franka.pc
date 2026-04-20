@@ -1,4 +1,4 @@
-prefix=/home/dhruv/Diffusion_policy_franka_ros/install
+prefix=/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/install
 
 Name: diffusion_policy_franka
 Description: Description of diffusion_policy_franka

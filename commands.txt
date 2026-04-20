@@ -1,0 +1,4 @@
+roslaunch diffusion_policy_franka launch_sim.launch npz_path:=/home/prabhav/ssd_2tb/dhruv/Collected_data_day2/dual_cam_20260325_162612.npz
+roslaunch diffusion_policy_franka launch_policy_node.launch checkpoint_path:=/media/prabhav/SATA_SSD/dhruv/epoch=0800-val_loss=0.028.ckpt
+
+

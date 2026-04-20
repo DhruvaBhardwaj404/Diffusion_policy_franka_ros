@@ -34,7 +34,7 @@
   <arg name="urdf_path"          default="src/panda.urdf"/>
   <!-- set false if using a digital twin or other live image source -->
   <arg name="use_sim_node"        default="true"/>
-
+  <arg name="robot_ip" default="127.0.0.1"/>
   <!-- ── sim_node: replays raw sensor data from NPZ onto sensor topics ── -->
   <!-- observation_node subscribes to these same topics and preprocesses  -->
   <!-- sim_node: replays raw sensor data from NPZ onto sensor topics -->
@@ -76,6 +76,7 @@
     <param name="cam1_topic"  value="/eih/color/image_raw"/>
     <param name="cam2_topic"  value="/ext/color/image_raw"/>
     <param name="urdf_path"   value="$(arg urdf_path)"/>
+    <param name="robot_ip"   value="$(arg robot_ip)"/>
   </node>
 
   <!-- ── controller_node — always running ──────────────────────────── -->

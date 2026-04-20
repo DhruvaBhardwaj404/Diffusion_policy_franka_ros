@@ -1,8 +1,8 @@
-# Install script for directory: /home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka
+# Install script for directory: /home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "/home/dhruv/Diffusion_policy_franka_ros/install")
+  set(CMAKE_INSTALL_PREFIX "/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/install")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -37,38 +37,33 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
   set(CMAKE_CROSSCOMPILING "FALSE")
 endif()
 
-# Set default install directory permissions.
-if(NOT DEFINED CMAKE_OBJDUMP)
-  set(CMAKE_OBJDUMP "/usr/bin/objdump")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
-endif()
-
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka/cmake" TYPE FILE FILES
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
+    "/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
+    "/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
     )
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_franka.pc")
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka/cmake" TYPE FILE FILES
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
-    "/home/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
+    "/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig.cmake"
+    "/media/prabhav/SATA_SSD/dhruv/Diffusion_policy_franka_ros/build/diffusion_policy_franka/catkin_generated/installspace/diffusion_policy_frankaConfig-version.cmake"
     )
 endif()
 
-if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/diffusion_policy_franka" TYPE FILE FILES "/home/prabhav/ssd_2tb/dhruv/Diffusion_policy_franka_ros/src/diffusion_policy_franka/package.xml")
 endif()
 
