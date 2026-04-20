@@ -162,8 +162,8 @@ class FrankaController(mp.Process):
             print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
 
-            HOME_JOINTS = torch.tensor([2.79, 0.39, -2.636, -2.22, 0.167, 2.041, 0.925], dtype=torch.float32)
-            robot.move_to_joint_positions(HOME_JOINTS, time_to_go=5.0)
+            HOME_JOINTS = torch.tensor([0.2738, -0.3285, -0.0257, -2.4625, 0.0264, 2.3204, 1.1224], dtype=torch.float32)
+            robot.move_to_joint_positions(HOME_JOINTS, time_to_go=10.0)
 
             state = robot.get_ee_pose()
             pos0 = state[0].numpy()
