@@ -31,7 +31,7 @@
   <!-- sim_node NPZ replay args -->
   <arg name="npz_path"            default=""/>       <!-- required if use_sim_node=true -->
   <arg name="loop"                default="false"/>
-
+  <arg name="urdf_path"          default="src/panda.urdf"/>
   <!-- set false if using a digital twin or other live image source -->
   <arg name="use_sim_node"        default="true"/>
 
@@ -75,6 +75,7 @@
     <!-- When use_sim_node=false point at your digital twin topics.     -->
     <param name="cam1_topic"  value="/eih/color/image_raw"/>
     <param name="cam2_topic"  value="/ext/color/image_raw"/>
+    <param name="urdf_path"   value="$(arg urdf_path)"/>
   </node>
 
   <!-- ── controller_node — always running ──────────────────────────── -->

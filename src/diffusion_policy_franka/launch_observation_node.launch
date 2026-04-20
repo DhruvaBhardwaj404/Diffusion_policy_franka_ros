@@ -25,6 +25,7 @@
   <!-- camera topics — must match data collector exactly -->
   <arg name="cam1_topic"          default="/eih/color/image_raw"/>
   <arg name="cam2_topic"          default="/ext/color/image_raw"/>
+  <arg name="urdf_path"          default="src/panda.urdf"/>
 
   <!-- speed limits — start conservative -->
   <arg name="max_pos_speed"       default="0.25"/>
@@ -39,6 +40,7 @@
     <param name="publish_hz"  value="$(arg action_hz)"/>
     <param name="cam1_topic"  value="$(arg cam1_topic)"/>
     <param name="cam2_topic"  value="$(arg cam2_topic)"/>
+    <param name="urdf_path"   value="$(arg urdf_path)"/>
   </node>
 
 

@@ -51,9 +51,8 @@ ROBOT_FINGER_OPEN   = 0.045   # metres
 ROBOT_FINGER_CLOSED = 0.015   # metres
 
 # URDF for offline FK — must be the same URDF used during data conversion
-URDF_PATH    = rospy.get_param("/observation_node/urdf_path",
-                               "path/to/panda.urdf")   # override via ROS param
-EE_LINK_NAME = "panda_hand"
+URDF_PATH    = rospy.get_param("~urdf_path",  "src/panda.urdf")
+EE_LINK_NAME = "panda_EndEffector"
 
 
 # ── Normalisation (identical to data conversion script) ───────────────────────
