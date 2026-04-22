@@ -13,30 +13,6 @@
   <arg name="use_sim_node"        default="true"/>
   <arg name="robot_ip" default="127.0.0.1"/>
 
-   <group if="$(arg use_sim_node)">
-
-    <!-- loop=false -->
-    <group unless="$(arg loop)">
-      <node name="sim_node"
-            pkg="diffusion_policy_franka"
-            type="sim_node.py"
-            output="screen"
-            args="--npz $(arg npz_path) --replay_hz $(arg action_hz)">
-      </node>
-    </group>
-
-    <!-- loop=true -->
-    <group if="$(arg loop)">
-      <node name="sim_node"
-            pkg="diffusion_policy_franka"
-            type="sim_node.py"
-            output="screen"
-            args="--npz $(arg npz_path) --replay_hz $(arg action_hz) --loop">
-      </node>
-    </group>
-
-  </group>
-
   <!-- ── controller_node — always running ──────────────────────────── -->
   <!-- Receives action chunks and drives PyBullet via Polymetis         -->
   <node name="controller_node"
