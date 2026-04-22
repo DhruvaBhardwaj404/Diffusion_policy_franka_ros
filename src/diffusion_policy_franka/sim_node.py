@@ -98,16 +98,7 @@ def load_demo(npz_path: str) -> dict:
 def move_to_home(joints_t0: np.ndarray,
                  robot_ip: str = "localhost",
                  time_to_go: float = 5.0):
-    """
-    Connect to Polymetis, move the robot to joints_t0, then terminate the
-    policy and delete the connection so other nodes (observation_node,
-    controller_node) can connect freely afterwards.
 
-    Args:
-        joints_t0  : (7,) float64 — target joint angles [rad]
-        robot_ip   : Polymetis server IP ("localhost" for PyBullet sim)
-        time_to_go : seconds for the move (5 for sim, 8-10 for hardware)
-    """
     rospy.loginfo(f"[SimNode] Connecting to Polymetis @ {robot_ip} ...")
 
     try:
@@ -116,7 +107,7 @@ def move_to_home(joints_t0: np.ndarray,
         rospy.logerr(f"[SimNode] Could not connect to Polymetis: {e}")
         raise
 
-    # stop any policy that might already be running
+    # stop any policy already running from a previous session
     try:
         robot.terminate_current_policy()
         rospy.loginfo("[SimNode] Terminated existing policy.")
@@ -134,14 +125,16 @@ def move_to_home(joints_t0: np.ndarray,
     robot.move_to_joint_positions(q0, time_to_go=time_to_go)
     rospy.loginfo("[SimNode] Home reached ✓")
 
-    # terminate and disconnect so other nodes can take over Polymetis
-    try:
-        robot.terminate_current_policy()
-    except Exception:
-        pass
-
+    # ── DO NOT terminate here ──────────────────────────────────────────────
+    # move_to_joint_positions completes and leaves the robot in gravity
+    # compensation — a valid idle state. controller_node will call
+    # start_cartesian_impedance() which replaces it cleanly.
+    # Calling terminate_current_policy() here puts Polymetis in a hard idle
+    # where controller_node's start_cartesian_impedance() fails.
+    # ──────────────────────────────────────────────────────────────────────
     del robot
-    rospy.loginfo("[SimNode] Polymetis disconnected — other nodes may now connect.")
+    rospy.loginfo("[SimNode] Polymetis connection released ✓")
+    rospy.loginfo("[SimNode] controller_node can now call start_cartesian_impedance().")
 
 
 # ── Publisher helpers ─────────────────────────────────────────────────────────
