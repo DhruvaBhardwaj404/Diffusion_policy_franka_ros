@@ -377,7 +377,22 @@ class ObservationNode:
         self.obs_pub.publish(msg)
 
     def spin(self):
-        rospy.spin()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            with self.buf_lock:
+                if len(self.buf_cam1) > 0:
+                    chw = list(self.buf_cam1)[-1]  # latest frame
+                    hwc = np.transpose(chw, (1, 2, 0))  # CHW → HWC
+                    cv2.imshow("cam1", hwc)
+                if len(self.buf_cam2) > 0:
+                    chw = list(self.buf_cam2)[-1]
+                    hwc = np.transpose(chw, (1, 2, 0))
+                    cv2.imshow("cam2", hwc)
+
+            cv2.waitKey(1)  # must be called in same thread as imshow
+            rate.sleep()
+
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
