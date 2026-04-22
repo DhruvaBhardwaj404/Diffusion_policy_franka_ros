@@ -68,16 +68,5 @@
     <param name="robot_ip"   value="$(arg robot_ip)"/>
   </node>
 
-  <!-- ── controller_node — always running ──────────────────────────── -->
-  <!-- Receives action chunks and drives PyBullet via Polymetis         -->
-  <node name="controller_node"
-        pkg="diffusion_policy_franka"
-        type="controller_node.py"
-        output="screen">
-    <param name="mode"      value="sim"/>
-    <param name="action_hz" value="$(arg action_hz)"/>
-    <param name="interp_hz" value="$(arg interp_hz)"/>
-    <!-- robot_ip not needed for sim — uses localhost -->
-  </node>
 
 </launch>

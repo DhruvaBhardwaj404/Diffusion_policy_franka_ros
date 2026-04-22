@@ -1,0 +1,41 @@
+<launch>
+
+  <!-- ── args ──────────────────────────────────────────────────────── -->
+  <arg name="output_dir"          default="/tmp/eval_real_output"/>
+  <arg name="action_hz"           default="10.0"/>
+  <arg name="interp_hz"           default="100.0"/>
+  <arg name="n_obs_steps"           default="2"/>
+  <!-- sim_node NPZ replay args -->
+  <arg name="npz_path"            default=""/>       <!-- required if use_sim_node=true -->
+  <arg name="loop"                default="false"/>
+  <arg name="urdf_path"          default="src/panda.urdf"/>
+  <!-- set false if using a digital twin or other live image source -->
+  <arg name="use_sim_node"        default="true"/>
+  <arg name="robot_ip" default="127.0.0.1"/>
+
+  <group if="$(arg use_sim_node)">
+    <node name="sim_node"
+          pkg="diffusion_policy_franka"
+          type="sim_node.py"
+          output="screen"
+          args="--npz $(arg npz_path)
+                --replay_hz $(arg action_hz)
+                --robot_ip $(arg robot_ip)
+                $(eval '--loop' if arg('loop') == 'true' else '')">
+    </node>
+  </group>
+
+
+  <!-- ── controller_node — always running ──────────────────────────── -->
+  <!-- Receives action chunks and drives PyBullet via Polymetis         -->
+  <node name="controller_node"
+        pkg="diffusion_policy_franka"
+        type="controller_node.py"
+        output="screen">
+    <param name="mode"      value="sim"/>
+    <param name="action_hz" value="$(arg action_hz)"/>
+    <param name="interp_hz" value="$(arg interp_hz)"/>
+    <!-- robot_ip not needed for sim — uses localhost -->
+  </node>
+
+</launch>
