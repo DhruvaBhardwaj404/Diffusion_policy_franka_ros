@@ -42,8 +42,12 @@ from polymetis import GripperInterface
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-EEF_POS_LOWER_LIMITS = np.array([0.3,  0.02, 0.07], dtype=np.float64)
-EEF_POS_UPPER_LIMITS = np.array([0.65, 0.25, 0.55], dtype=np.float64)
+EEF_POS_LOWER_LIMITS   = np.array([ 0.15, -0.12,  0.13], dtype=np.float32)
+EEF_POS_UPPER_LIMITS   = np.array([ 0.65,  0.30,  0.60], dtype=np.float32)
+
+EEF_EULER_LOWER_LIMITS = np.array([-3.1416, -0.35, -2.40], dtype=np.float32)
+EEF_EULER_UPPER_LIMITS = np.array([ 3.1416,  0.40,  0.25], dtype=np.float32)
+
 
 GRIPPER_OPEN_WIDTH  = 0.08
 GRIPPER_CLOSE_WIDTH = 0.04
@@ -57,11 +61,16 @@ def unnormalize_eef_pos(norm_pos: np.ndarray) -> np.ndarray:
     pos_range = EEF_POS_UPPER_LIMITS - EEF_POS_LOWER_LIMITS
     return (norm_pos + 1.0) / 2.0 * pos_range + EEF_POS_LOWER_LIMITS
 
+def unnormalize_eef_euler(norm_euler: np.ndarray) -> np.ndarray:
+    pos_euler = EEF_EULER_UPPER_LIMITS - EEF_EULER_LOWER_LIMITS
+    return (norm_euler + 1.0) / 2.0 * pos_euler + EEF_EULER_LOWER_LIMITS
+
 
 def actions_to_poses(actions: np.ndarray) -> np.ndarray:
     """(N, 7) action → (N, 7) pose  [xyz | xyzw quat]"""
     real_pos = unnormalize_eef_pos(actions[:, :3])
-    quats    = Rotation.from_euler('xyz', actions[:, 3:6]).as_quat()  # xyzw
+    real_euler = unnormalize_eef_euler( actions[:, 3:6])
+    quats    = Rotation.from_euler('xyz', real_euler).as_quat()  # xyzw
     return np.concatenate([real_pos, quats], axis=1)
 
 
@@ -129,7 +138,7 @@ class FrankaController(mp.Process):
         self.command_queue = command_queue
         self.robot_ip      = robot_ip
         self.interp_hz     = interp_hz
-        self.max_pos_speed = max_pos_speed
+        self.max_pos_speed = 0.3
         self.max_rot_speed = max_rot_speed
         self.verbose       = verbose
         self.ready_event   = mp.Event()

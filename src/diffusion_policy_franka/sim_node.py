@@ -106,7 +106,7 @@ def make_image_msg(bridge: CvBridge, rgb_img: np.ndarray,
     a desired encoding, so it will receive what we send.
     NPZ stores raw RGB from the data collector, so we send RGB directly.
     """
-    msg = bridge.cv2_to_imgmsg(rgb_img, encoding="rgb8")
+    msg = bridge.cv2_to_imgmsg(rgb_img, encoding="bgr8")
     msg.header.stamp    = stamp
     msg.header.frame_id = frame_id
     return msg

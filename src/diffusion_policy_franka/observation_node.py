@@ -118,7 +118,7 @@ def joints_to_eef(robot_model, q: np.ndarray):
 
     norm_pos   = normalize_eef_pos(pos)
     norm_euler = normalise_eef_euler(euler)
-
+    print(pos,euler)
     return norm_pos, norm_euler, quat
 
 
@@ -136,8 +136,8 @@ class ObservationNode:
         self.urdf_path   = rospy.get_param("~urdf_path",    URDF_PATH)
         self.ee_link     = rospy.get_param("~ee_link",      EE_LINK_NAME)
 
-        self.cam1_topic  = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
-        self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
+        self.cam1_topic  = rospy.get_param("~cam1_topic", "/ext/color/image_raw")  #temporary fix because policy trained on switched labels
+        self.cam2_topic  = rospy.get_param("~cam2_topic", "/eih/color/image_raw")
 
         # ── FK model (Polymetis Pinocchio — same as converter) ────────────────
         rospy.loginfo(f"[ObsNode] Loading Pinocchio model: {self.urdf_path} (ee: {self.ee_link})")
@@ -307,7 +307,16 @@ class ObservationNode:
 
         # ── preprocess — matches converter exactly ─────────────────────────
         proc_img1                    = preprocess_image(img1)   # BGR input
+
+        # debug_img = (proc_img1.transpose(1, 2, 0) * 255).astype(np.uint8)
+        # cv2.imshow("Debug Cam1 (Model Input)", cv2.cvtColor(debug_img, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(1)
         proc_img2                    = preprocess_image(img2)   # BGR input
+
+        # debug_img = (proc_img2.transpose(1, 2, 0) * 255).astype(np.uint8)
+        # cv2.imshow("Debug Cam1 (Model Input)", cv2.cvtColor(debug_img, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(1)
+
         norm_pos, norm_euler, quat   = joints_to_eef(self.robot_model, joints)
         norm_gripper                 = normalize_gripper(gripper.astype(np.float32))
 

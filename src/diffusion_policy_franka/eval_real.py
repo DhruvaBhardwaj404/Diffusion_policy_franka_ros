@@ -41,15 +41,47 @@ import traceback
 
 # ── Obs unpacking ─────────────────────────────────────────────────────────────
 
+# def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
+#     """
+#     Flat layout (must match observation_node._publish_obs exactly):
+#         robot0_eef_pos      n_obs_steps * 3
+#         robot0_eef_quat     n_obs_steps * 4
+#         robot0_eef_gpos     n_obs_steps * 2
+#         camera_image        n_obs_steps * 3 * 84 * 84
+#         camera_wrist_image  n_obs_steps * 3 * 84 * 84
+#     """
+#     data   = np.array(msg.data, dtype=np.float32)
+#     T      = n_obs_steps
+#     offset = 0
+
+#     def pull(size):
+#         nonlocal offset
+#         chunk = data[offset: offset + size]
+#         offset += size
+#         return chunk
+
+#     eef_pos   = pull(T * 3).reshape(T, 3)
+#     eef_quat  = pull(T * 4).reshape(T, 4)
+#     gripper   = pull(T * 2).reshape(T, 2)
+#     cam       = pull(T * 3 * 84 * 84).reshape(T, 3, 84, 84)
+#     cam_wrist = pull(T * 3 * 84 * 84).reshape(T, 3, 84, 84)
+
+#     def to_tensor(arr):
+#         return torch.tensor(arr, dtype=torch.float32,
+#                             device=device).unsqueeze(0)  # (1, T, ...)
+
+#     return {
+#         "robot0_eef_pos":     to_tensor(eef_pos),
+#         "robot0_eef_quat":    to_tensor(eef_quat),
+#         "robot0_eef_gpos":    to_tensor(gripper),
+#         "camera_image":       to_tensor(cam),
+#         "camera_wrist_image": to_tensor(cam_wrist),
+#     }
+
 def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
-    """
-    Flat layout (must match observation_node._publish_obs exactly):
-        robot0_eef_pos      n_obs_steps * 3
-        robot0_eef_quat     n_obs_steps * 4
-        robot0_eef_gpos     n_obs_steps * 2
-        camera_image        n_obs_steps * 3 * 84 * 84
-        camera_wrist_image  n_obs_steps * 3 * 84 * 84
-    """
+    # Use the actual dimensions from your publisher (DESIRED_H, DESIRED_W)
+    H, W = 240, 320 
+    
     data   = np.array(msg.data, dtype=np.float32)
     T      = n_obs_steps
     offset = 0
@@ -60,24 +92,35 @@ def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
         offset += size
         return chunk
 
+    # 1. eef_pos: T * 3
     eef_pos   = pull(T * 3).reshape(T, 3)
+    
+    # 2. eef_euler: T * 3 (This was missing in your original code!)
+    eef_euler = pull(T * 3).reshape(T, 3)
+    
+    # 3. eef_quat: T * 4
     eef_quat  = pull(T * 4).reshape(T, 4)
+    
+    # 4. eef_gpos (gripper): T * 2
     gripper   = pull(T * 2).reshape(T, 2)
-    cam       = pull(T * 3 * 84 * 84).reshape(T, 3, 84, 84)
-    cam_wrist = pull(T * 3 * 84 * 84).reshape(T, 3, 84, 84)
+    
+    # 5. camera_image: T * 3 * H * W
+    cam       = pull(T * 3 * H * W).reshape(T, 3, H, W)
+    
+    # 6. camera_wrist_image: T * 3 * H * W
+    cam_wrist = pull(T * 3 * H * W).reshape(T, 3, H, W)
 
     def to_tensor(arr):
-        return torch.tensor(arr, dtype=torch.float32,
-                            device=device).unsqueeze(0)  # (1, T, ...)
+        return torch.tensor(arr, dtype=torch.float32, 
+                            device=device).unsqueeze(0)  # Add Batch Dim (1, T, ...)
 
     return {
-        "robot0_eef_pos":     to_tensor(eef_pos),
-        "robot0_eef_quat":    to_tensor(eef_quat),
-        "robot0_eef_gpos":    to_tensor(gripper),
-        "camera_image":       to_tensor(cam),
-        "camera_wrist_image": to_tensor(cam_wrist),
+        "robot0_eef_pos":         to_tensor(eef_pos),
+        "robot0_eef_quat":        to_tensor(eef_quat),
+        "robot0_eef_gpos":        to_tensor(gripper),
+        "camera_image":           to_tensor(cam),
+        "camera_wrist_image":     to_tensor(cam_wrist),
     }
-
 
 # ── Policy runner ─────────────────────────────────────────────────────────────
 
