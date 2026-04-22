@@ -239,7 +239,7 @@ class FrankaController(mp.Process):
 
                 q_xyzw = Rotation.from_rotvec(rotvec).as_quat()
                 q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
-                print("next",pos,rotvec)
+                #print("next",pos,rotvec)
                 robot.update_desired_ee_pose(
                     position=torch.tensor(pos, dtype=torch.float32),
                     orientation=torch.tensor(q_wxyz, dtype=torch.float32),
