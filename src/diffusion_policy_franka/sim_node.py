@@ -5,6 +5,10 @@ sim_node.py  (NPZ demo replay version)
 Replays a recorded demonstration from an NPZ file by publishing raw sensor
 data on the same topics that observation_node.py subscribes to.
 
+Also seeds the Polymetis server (real or PyBullet sim) to the demo's first
+joint configuration so that observation_node.py (which polls Polymetis
+directly) starts from the correct robot state.
+
 observation_node.py then preprocesses the data identically to training,
 and publishes to /diffusion_policy/observation for eval_real.py.
 
@@ -42,6 +46,9 @@ Options:
     --cam2_topic    topic for external camera (default: /ext/color/image_raw)
     --joint_topic   topic for joint states    (default: /franka_state_controller/joint_states)
     --gripper_topic topic for gripper states  (default: /franka_gripper/joint_states)
+    --robot_ip      Polymetis server IP       (default: localhost for sim)
+    --seed_time     seconds to move to start pose (default: 5.0)
+    --skip_seed     skip seeding Polymetis start pose
     --verbose       print per-step info
 """
 
@@ -49,9 +56,11 @@ import argparse
 import sys
 
 import numpy as np
+import torch
 import rospy
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, JointState
+from polymetis import RobotInterface
 
 
 # ── NPZ loader ────────────────────────────────────────────────────────────────
@@ -97,16 +106,61 @@ def load_demo(npz_path: str) -> dict:
     }
 
 
+# ── Polymetis start pose seeding ──────────────────────────────────────────────
+
+def seed_polymetis_start_pose(joints_t0: np.ndarray,
+                               robot_ip: str = "localhost",
+                               time_to_go: float = 5.0):
+    """
+    Move the Polymetis server (real or PyBullet) to the demo's first joint
+    configuration so observation_node.py starts from the correct state.
+
+    observation_node.py polls Polymetis directly via RobotInterface, so
+    camera images are the only thing still driven by ROS topic replay.
+    Joint state seen by observation_node will be frozen at joints[0] for
+    the duration of the replay unless you also drive it step-by-step.
+
+    Args:
+        joints_t0  : (7,) float64 — first-frame joint angles from NPZ [rad]
+        robot_ip   : Polymetis server IP ("localhost" for PyBullet sim)
+        time_to_go : seconds to reach the start pose
+                     (use 5.0 for sim, 8-10 for hardware)
+    """
+    rospy.loginfo(
+        f"[SimNode] Connecting to Polymetis @ {robot_ip} to seed start pose ..."
+    )
+
+    try:
+        robot = RobotInterface(ip_address=robot_ip, enforce_version=False)
+    except Exception as e:
+        rospy.logerr(f"[SimNode] Could not connect to Polymetis: {e}")
+        raise
+
+    q0 = torch.tensor(joints_t0, dtype=torch.float32)
+    rospy.loginfo(
+        f"[SimNode] Moving to demo start joints:\n"
+        f"  {np.round(joints_t0, 4)}\n"
+        f"  time_to_go = {time_to_go}s"
+    )
+
+    robot.move_to_joint_positions(q0, time_to_go=time_to_go)
+    rospy.loginfo("[SimNode] Start pose reached ✓")
+
+
 # ── Publisher helpers ─────────────────────────────────────────────────────────
 
 def make_image_msg(bridge: CvBridge, rgb_img: np.ndarray,
                    stamp: rospy.Time, frame_id: str = "camera") -> Image:
     """
-    Publish as rgb8 — observation_node.py calls imgmsg_to_cv2() without
-    a desired encoding, so it will receive what we send.
-    NPZ stores raw RGB from the data collector, so we send RGB directly.
+    Publish as bgr8 — observation_node.py calls imgmsg_to_cv2(msg, "bgr8")
+    which forces BGR output regardless of encoding.
+
+    NPZ stores raw RGB from the data collector; observation_node expects BGR
+    on the wire (it mirrors the real camera which publishes bgr8). So we
+    flip RGB → BGR here before encoding.
     """
-    msg = bridge.cv2_to_imgmsg(rgb_img, encoding="bgr8")
+    bgr_img = rgb_img[..., ::-1].copy()   # RGB → BGR to match real camera
+    msg = bridge.cv2_to_imgmsg(bgr_img, encoding="bgr8")
     msg.header.stamp    = stamp
     msg.header.frame_id = frame_id
     return msg
@@ -147,6 +201,12 @@ def main():
     parser.add_argument("--gripper_topic", type=str,
                         default="/franka_gripper/joint_states",
                         help="Gripper states topic")
+    parser.add_argument("--robot_ip",      type=str, default="localhost",
+                        help="Polymetis server IP (default: localhost for sim)")
+    parser.add_argument("--seed_time",     type=float, default=5.0,
+                        help="Seconds to move to start pose (default: 5.0, use 8-10 for hardware)")
+    parser.add_argument("--skip_seed",     action="store_true",
+                        help="Skip seeding Polymetis start pose (use if robot is already positioned)")
     parser.add_argument("--verbose",       action="store_true",
                         help="Print per-step info")
 
@@ -158,6 +218,19 @@ def main():
     # ── load demo ─────────────────────────────────────────────────────────────
     demo = load_demo(args.npz)
 
+    # ── seed Polymetis to demo start pose ─────────────────────────────────────
+    # observation_node.py polls Polymetis directly, so we must put the robot
+    # in the correct starting configuration before the observation buffer fills.
+    # Camera images are still driven by this node's topic replay below.
+    if not args.skip_seed:
+        seed_polymetis_start_pose(
+            joints_t0  = demo["joints"][0],
+            robot_ip   = args.robot_ip,
+            time_to_go = args.seed_time,
+        )
+    else:
+        rospy.loginfo("[SimNode] Skipping Polymetis start pose seed (--skip_seed set).")
+
     # ── publishers — raw sensor topics, same as observation_node subscribes to ─
     bridge = CvBridge()
 
@@ -167,7 +240,7 @@ def main():
     pub_gripper = rospy.Publisher(args.gripper_topic, JointState, queue_size=1)
 
     # Joint names expected by franka_state_controller
-    JOINT_NAMES  = [f"panda_joint{i}" for i in range(1, 8)]
+    JOINT_NAMES   = [f"panda_joint{i}" for i in range(1, 8)]
 
     # Gripper finger names expected by franka_gripper
     GRIPPER_NAMES = ["panda_finger_joint1", "panda_finger_joint2"]
@@ -183,6 +256,8 @@ def main():
         f"  n_steps        : {n_steps}\n"
         f"  replay_hz      : {args.replay_hz}\n"
         f"  loop           : {args.loop}\n"
+        f"  robot_ip       : {args.robot_ip}\n"
+        f"  skip_seed      : {args.skip_seed}\n"
         f"  cam1 topic     : {args.cam1_topic}\n"
         f"  cam2 topic     : {args.cam2_topic}\n"
         f"  joint topic    : {args.joint_topic}\n"
@@ -199,6 +274,13 @@ def main():
                 step_idx = 0
                 loop_num += 1
                 rospy.loginfo(f"[SimNode] Loop {loop_num} restarting demo ...")
+                # Re-seed start pose at the beginning of each loop
+                if not args.skip_seed:
+                    seed_polymetis_start_pose(
+                        joints_t0  = demo["joints"][0],
+                        robot_ip   = args.robot_ip,
+                        time_to_go = args.seed_time,
+                    )
                 rospy.sleep(0.5)
                 continue
             else:
@@ -207,7 +289,9 @@ def main():
 
         stamp = rospy.Time.now()
 
-        # ── publish raw camera images (uint8 RGB — identical to data collector) ─
+        # ── publish raw camera images ──────────────────────────────────────────
+        # NPZ stores RGB; make_image_msg flips to BGR to match real camera output
+        # which observation_node.py expects (it calls imgmsg_to_cv2(msg, "bgr8"))
         img1_msg = make_image_msg(
             bridge, demo["images1"][step_idx], stamp, frame_id="camera_wrist")
         img2_msg = make_image_msg(
@@ -216,12 +300,14 @@ def main():
         pub_cam1.publish(img1_msg)
         pub_cam2.publish(img2_msg)
 
-        # ── publish joint states ───────────────────────────────────────────────
+        # ── publish joint states (informational — observation_node uses Polymetis) ─
+        # These are published for any other nodes that may be listening, but
+        # observation_node.py ignores them and polls Polymetis directly.
         joint_msg = make_joint_state_msg(
             demo["joints"][step_idx], JOINT_NAMES, stamp)
         pub_joints.publish(joint_msg)
 
-        # ── publish gripper states ─────────────────────────────────────────────
+        # ── publish gripper states (informational — same caveat as joints) ────
         gripper_msg = make_joint_state_msg(
             demo["gripper_pos"][step_idx], GRIPPER_NAMES, stamp)
         pub_gripper.publish(gripper_msg)
