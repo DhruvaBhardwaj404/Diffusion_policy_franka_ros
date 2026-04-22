@@ -20,11 +20,13 @@ from polymetis import GripperInterface
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-EEF_POS_LOWER_LIMITS = np.array([0.15,  -0.12, 0.13], dtype=np.float64)
-EEF_POS_UPPER_LIMITS = np.array([0.65, 0.30, 0.6], dtype=np.float64)
 
-EEF_EULER_LOWER_LIMITS = np.array([-3.1416,  -0.35, -2.40], dtype=np.float64)
-EEF_EULER_UPPER_LIMITS = np.array([3.1416, 0.40, 0.25], dtype=np.float64)
+EEF_POS_LOWER_LIMITS   = np.array([ 0.15, -0.12,  0.13])
+EEF_POS_UPPER_LIMITS   = np.array([ 0.65,  0.30,  0.60])
+
+EEF_EULER_LOWER_LIMITS = np.array([-3.1416, -0.35, -2.40])
+EEF_EULER_UPPER_LIMITS = np.array([ 3.1416,  0.40,  0.25])
+
 
 BBOX_LOWER = np.array([-0.3,  -0.3, 0.1], dtype=np.float64)  # x_min, y_min, z_min
 BBOX_UPPER = np.array([0.8,   0.5, 0.7], dtype=np.float64)  # x_max, y_max, z_max
@@ -35,7 +37,7 @@ BBOX_VIOLATION_MODE = "clamp"
 GRIPPER_OPEN_WIDTH  = 0.08
 GRIPPER_CLOSE_WIDTH = 0.04
 GRIPPER_SPEED       = 0.05
-GRIPPER_FORCE       = 10.0
+GRIPPER_FORCE       = 5.0
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

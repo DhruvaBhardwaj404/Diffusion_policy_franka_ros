@@ -40,11 +40,15 @@ from polymetis import RobotInterface, GripperInterface
 DESIRED_H = 84
 DESIRED_W = 84
 
-EEF_POS_LOWER_LIMITS  = np.array([0.3,  0.02, 0.07],        dtype=np.float32)
-EEF_POS_UPPER_LIMITS  = np.array([0.65, 0.25, 0.55],        dtype=np.float32)
 
-ROBOT_FINGER_OPEN     = 0.041   # metres
-ROBOT_FINGER_CLOSED   = 0.018   # metres
+EEF_POS_LOWER_LIMITS   = np.array([ 0.15, -0.12,  0.13])
+EEF_POS_UPPER_LIMITS   = np.array([ 0.65,  0.30,  0.60])
+
+EEF_EULER_LOWER_LIMITS = np.array([-3.1416, -0.35, -2.40])
+EEF_EULER_UPPER_LIMITS = np.array([ 3.1416,  0.40,  0.25])
+
+ROBOT_FINGER_OPEN   = 0.045
+ROBOT_FINGER_CLOSED = 0.015
 
 
 # ── Preprocessing (identical to data conversion script) ───────────────────────
