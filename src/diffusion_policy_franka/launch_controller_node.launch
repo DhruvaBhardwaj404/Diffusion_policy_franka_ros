@@ -16,13 +16,13 @@
   <!-- ── args ──────────────────────────────────────────────────────── -->
 
   <arg name="action_hz"           default="10.0"/>
-  <arg name="interp_hz"           default="200.0"/>
+  <arg name="interp_hz"           default="100.0"/>
 
   <!-- RT machine IP — always required for hardware mode -->
   <arg name="robot_ip"/>
 
   <!-- speed limits — start conservative -->
-  <arg name="max_pos_speed"       default="0.05"/>
+  <arg name="max_pos_speed"       default="0.15"/>
   <arg name="max_rot_speed"       default="0.2"/>
 
 

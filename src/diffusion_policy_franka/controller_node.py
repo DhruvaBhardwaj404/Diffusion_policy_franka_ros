@@ -20,8 +20,11 @@ from polymetis import GripperInterface
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-EEF_POS_LOWER_LIMITS = np.array([0.3,  0.02, 0.07], dtype=np.float64)
-EEF_POS_UPPER_LIMITS = np.array([0.65, 0.25, 0.55], dtype=np.float64)
+EEF_POS_LOWER_LIMITS = np.array([0.15,  -0.12, 0.13], dtype=np.float64)
+EEF_POS_UPPER_LIMITS = np.array([0.65, 0.30, 0.6], dtype=np.float64)
+
+EEF_EULER_LOWER_LIMITS = np.array([-3.1416,  -0.35, -2.40], dtype=np.float64)
+EEF_EULER_UPPER_LIMITS = np.array([3.1416, 0.40, 0.25], dtype=np.float64)
 
 BBOX_LOWER = np.array([-0.3,  -0.3, 0.1], dtype=np.float64)  # x_min, y_min, z_min
 BBOX_UPPER = np.array([0.8,   0.5, 0.7], dtype=np.float64)  # x_max, y_max, z_max
@@ -41,11 +44,16 @@ def unnormalize_eef_pos(norm_pos: np.ndarray) -> np.ndarray:
     pos_range = EEF_POS_UPPER_LIMITS - EEF_POS_LOWER_LIMITS
     return (norm_pos + 1.0) / 2.0 * pos_range + EEF_POS_LOWER_LIMITS
 
+def unnormalize_eef_euler(norm_euler: np.ndarray) -> np.ndarray:
+    euler_range = EEF_EULER_UPPER_LIMITS - EEF_EULER_LOWER_LIMITS
+    return (norm_euler + 1.0) / 2.0 * euler_range + EEF_EULER_LOWER_LIMITS
+
 
 def actions_to_poses(actions: np.ndarray) -> np.ndarray:
     """(N, 7) action → (N, 7) pose  [xyz | xyzw quat]"""
     real_pos = unnormalize_eef_pos(actions[:, :3])
-    quats    = Rotation.from_euler('xyz', actions[:, 3:6]).as_quat()  # xyzw
+    real_euler = unnormalize_eef_euler(actions[:,3:6])
+    quats    = Rotation.from_euler('xyz', real_euler).as_quat()  # xyzw
     return np.concatenate([real_pos, quats], axis=1)
 
 
@@ -162,8 +170,8 @@ class FrankaController(mp.Process):
             print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
 
-            HOME_JOINTS = torch.tensor([0.2738, -0.3285, -0.0257, -2.4625, 0.0264, 2.3204, 1.1224], dtype=torch.float32)
-            robot.move_to_joint_positions(HOME_JOINTS, time_to_go=10.0)
+            #HOME_JOINTS = torch.tensor([0.2738, -0.3285, -0.0257, -2.4625, 0.0264, 2.3204, 1.1224], dtype=torch.float32)
+            #robot.move_to_joint_positions(HOME_JOINTS, time_to_go=10.0)
 
             state = robot.get_ee_pose()
             pos0 = state[0].numpy()
@@ -229,7 +237,7 @@ class FrankaController(mp.Process):
 
                 q_xyzw = Rotation.from_rotvec(rotvec).as_quat()
                 q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
-
+                print("next",pos,rotvec)
                 robot.update_desired_ee_pose(
                     position=torch.tensor(pos, dtype=torch.float32),
                     orientation=torch.tensor(q_wxyz, dtype=torch.float32),
