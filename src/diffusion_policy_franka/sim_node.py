@@ -4,34 +4,31 @@ sim_node.py  (NPZ demo replay version)
 ----------------------------------------
 Flow:
   1. Load NPZ demo file.
-  2. Connect to Polymetis → move robot to demo start (home) joints → disconnect.
-  3. Wait for user to press Enter.
-  4. Create ROS publishers and start replaying camera images onto sensor topics.
+  2. Connect to Polymetis -> move robot to demo start (home) joints.
+  3. Briefly start then terminate cartesian impedance to cycle Polymetis
+     back to a clean gravity-comp idle so controller_node's
+     start_cartesian_impedance() call succeeds.
+  4. Disconnect from Polymetis.
+  5. Wait for user to press Enter.
+  6. Create ROS publishers and start replaying camera images onto sensor topics.
 
 observation_node.py subscribes to the camera topics published here, and polls
-Polymetis directly for joint/gripper state (which is frozen at home after step 2).
+Polymetis directly for joint/gripper state (frozen at home after step 2).
 
 NPZ keys expected:
-    images1          (T, H, W, 3)  uint8   — cam1 (wrist)
-    images2          (T, H, W, 3)  uint8   — cam2 (external)
+    images1          (T, H, W, 3)  uint8   -- cam1 (wrist)
+    images2          (T, H, W, 3)  uint8   -- cam2 (external)
     joints           (T, 7)        float64
     gripper_pos      (T, 2)        float64
 
-Setup:
-    # Terminal 1: ROS master
-    roscore
-
-    # Terminal 2: PyBullet sim server
-    launch_robot.py robot_client=bullet_sim gui=true
-
-    # Terminal 3: observation node
-    python observation_node.py
-
-    # Terminal 4: eval node
-    python eval_real.py
-
-    # Terminal 5: this script
-    python sim_node.py --npz /path/to/demo.npz [options]
+Startup order:
+    1. roscore
+    2. launch_robot.py robot_client=bullet_sim gui=true
+    3. python sim_node.py --npz demo.npz          <- moves to home, cycles impedance
+    4. python controller_node.py                  <- start_cartesian_impedance() works
+    5. python observation_node.py
+    6. python eval_real.py
+    7. press Enter in sim_node terminal           <- image replay begins
 
 Options:
     --npz           path to NPZ demo file (required)
@@ -77,7 +74,7 @@ def load_demo(npz_path: str) -> dict:
     T           = images1.shape[0]
 
     rospy.loginfo(
-        f"[SimNode] Demo loaded ✓\n"
+        f"[SimNode] Demo loaded\n"
         f"  steps       : {T}\n"
         f"  image shape : {images1.shape[1:]}\n"
         f"  joint shape : {joints.shape[1:]}\n"
@@ -98,7 +95,23 @@ def load_demo(npz_path: str) -> dict:
 def move_to_home(joints_t0: np.ndarray,
                  robot_ip: str = "localhost",
                  time_to_go: float = 5.0):
+    """
+    Connect to Polymetis, move the robot to joints_t0, then cycle through
+    cartesian impedance once and terminate it.
 
+    Why the impedance cycle:
+        move_to_joint_positions() completes and leaves Polymetis in a hard
+        idle state where a subsequent start_cartesian_impedance() call (from
+        controller_node) fails with "unable to update desired joint position".
+        Briefly starting and then terminating cartesian impedance here resets
+        the server to a clean gravity-comp idle that accepts the next
+        start_cartesian_impedance() call without any changes to controller_node.
+
+    Args:
+        joints_t0  : (7,) float64 -- target joint angles [rad]
+        robot_ip   : Polymetis server IP ("localhost" for PyBullet sim)
+        time_to_go : seconds for the move (5 for sim, 8-10 for hardware)
+    """
     rospy.loginfo(f"[SimNode] Connecting to Polymetis @ {robot_ip} ...")
 
     try:
@@ -113,7 +126,7 @@ def move_to_home(joints_t0: np.ndarray,
         rospy.loginfo("[SimNode] Terminated existing policy.")
         rospy.sleep(0.3)
     except Exception:
-        pass  # nothing was running — fine
+        pass  # nothing was running -- fine
 
     q0 = torch.tensor(joints_t0, dtype=torch.float32)
     rospy.loginfo(
@@ -125,16 +138,27 @@ def move_to_home(joints_t0: np.ndarray,
     robot.move_to_joint_positions(q0, time_to_go=time_to_go)
     rospy.loginfo("[SimNode] Home reached ✓")
 
-    # ── DO NOT terminate here ──────────────────────────────────────────────
-    # move_to_joint_positions completes and leaves the robot in gravity
-    # compensation — a valid idle state. controller_node will call
-    # start_cartesian_impedance() which replaces it cleanly.
-    # Calling terminate_current_policy() here puts Polymetis in a hard idle
-    # where controller_node's start_cartesian_impedance() fails.
-    # ──────────────────────────────────────────────────────────────────────
+    # ── impedance cycle ────────────────────────────────────────────────────
+    # move_to_joint_positions leaves Polymetis in hard idle. Briefly starting
+    # and terminating cartesian impedance resets it to a clean state so
+    # controller_node's start_cartesian_impedance() works without modification.
+    rospy.sleep(0.5)
+    try:
+        robot.start_cartesian_impedance()
+        rospy.loginfo("[SimNode] Impedance cycle: started ...")
+        rospy.sleep(0.5)
+        robot.terminate_current_policy()
+        rospy.loginfo("[SimNode] Impedance cycle: terminated ✓")
+        rospy.loginfo("[SimNode] Polymetis is in clean idle — controller_node can connect.")
+    except Exception as e:
+        rospy.logwarn(
+            f"[SimNode] Impedance cycle failed: {e}\n"
+            f"  controller_node may still fail — try restarting the sim server."
+        )
+
+    rospy.sleep(0.3)
     del robot
     rospy.loginfo("[SimNode] Polymetis connection released ✓")
-    rospy.loginfo("[SimNode] controller_node can now call start_cartesian_impedance().")
 
 
 # ── Publisher helpers ─────────────────────────────────────────────────────────
@@ -177,7 +201,7 @@ def main():
     parser.add_argument("--npz",           type=str,   required=True,
                         help="Path to NPZ demo file")
     parser.add_argument("--replay_hz",     type=float, default=10.0,
-                        help="Image publish rate Hz — match observation_node publish_hz (default: 10)")
+                        help="Image publish rate Hz -- match observation_node publish_hz (default: 10)")
     parser.add_argument("--loop",          action="store_true",
                         help="Loop the image replay continuously")
     parser.add_argument("--robot_ip",      type=str,   default="localhost",
@@ -205,7 +229,7 @@ def main():
     # ── step 1: load demo ─────────────────────────────────────────────────────
     demo = load_demo(args.npz)
 
-    # ── step 2: move robot to home, then disconnect Polymetis ─────────────────
+    # ── step 2: move to home and reset Polymetis to clean idle ────────────────
     if not args.skip_seed:
         move_to_home(
             joints_t0  = demo["joints"][0],
@@ -213,20 +237,20 @@ def main():
             time_to_go = args.seed_time,
         )
     else:
-        rospy.loginfo("[SimNode] --skip_seed set — skipping home move.")
+        rospy.loginfo("[SimNode] --skip_seed set -- skipping home move.")
 
-    # ── step 3: wait for user to press Enter ──────────────────────────────────
+    # ── step 3: wait for user confirmation ────────────────────────────────────
     rospy.loginfo("\n" + "=" * 60)
-    rospy.loginfo("[SimNode] Robot is at home position.")
-    rospy.loginfo("[SimNode] Make sure observation_node and eval_real.py are running.")
-    rospy.loginfo("[SimNode] Press Enter to begin image replay ...")
+    rospy.loginfo("[SimNode] Robot is at home. Polymetis is in clean idle.")
+    rospy.loginfo("[SimNode] Start controller_node, observation_node, eval_real.py now.")
+    rospy.loginfo("[SimNode] Press Enter when ready to begin image replay ...")
     rospy.loginfo("=" * 60 + "\n")
 
     try:
         input()
     except EOFError:
-        # non-interactive launch (e.g. roslaunch) — proceed immediately
-        rospy.loginfo("[SimNode] Non-interactive — starting replay immediately.")
+        # non-interactive launch (e.g. roslaunch) -- proceed immediately
+        rospy.loginfo("[SimNode] Non-interactive -- starting replay immediately.")
 
     # ── step 4: create publishers and start replaying ─────────────────────────
     bridge = CvBridge()
@@ -264,7 +288,7 @@ def main():
             if args.loop:
                 step_idx = 0
                 loop_num += 1
-                rospy.loginfo(f"[SimNode] Loop {loop_num} — restarting replay ...")
+                rospy.loginfo(f"[SimNode] Loop {loop_num} -- restarting replay ...")
                 rospy.sleep(0.5)
                 continue
             else:
@@ -273,13 +297,13 @@ def main():
 
         stamp = rospy.Time.now()
 
-        # camera images — NPZ is RGB, flip to BGR to match real camera on wire
+        # camera images -- NPZ is RGB, flip to BGR to match real camera on wire
         pub_cam1.publish(make_image_msg(
             bridge, demo["images1"][step_idx], stamp, frame_id="camera_wrist"))
         pub_cam2.publish(make_image_msg(
             bridge, demo["images2"][step_idx], stamp, frame_id="camera_ext"))
 
-        # joint / gripper states — informational only, observation_node uses Polymetis
+        # joint / gripper states -- informational only, observation_node uses Polymetis
         pub_joints.publish(make_joint_state_msg(
             demo["joints"][step_idx], JOINT_NAMES, stamp))
         pub_gripper.publish(make_joint_state_msg(
