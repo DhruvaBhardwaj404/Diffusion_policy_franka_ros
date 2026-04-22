@@ -88,7 +88,8 @@ def preprocess_image(bgr_img: np.ndarray) -> np.ndarray:
     """
     resized = cv2.resize(bgr_img, (DESIRED_W, DESIRED_H),
                          interpolation=cv2.INTER_AREA)
-    rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    # rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    rgb = resized
     chw     = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
     return chw   # (3, DESIRED_H, DESIRED_W)
 
