@@ -118,7 +118,7 @@ def joints_to_eef(robot_model, q: np.ndarray):
 
     norm_pos   = normalize_eef_pos(pos)
     norm_euler = normalise_eef_euler(euler)
-    print(pos,euler)
+    #print(pos,euler)
     return norm_pos, norm_euler, quat
 
 
