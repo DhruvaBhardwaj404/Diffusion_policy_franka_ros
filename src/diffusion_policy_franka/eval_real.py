@@ -104,11 +104,11 @@ def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
     # 4. eef_gpos (gripper): T * 2
     gripper   = pull(T * 2).reshape(T, 2)
     
-    # 5. camera_image: T * 3 * H * W
-    cam       = pull(T * 3 * H * W).reshape(T, 3, H, W)
+    # 5. camera_wrist_image: T * 3 * H * W
+    cam_wrist       = pull(T * 3 * H * W).reshape(T, 3, H, W)
     
-    # 6. camera_wrist_image: T * 3 * H * W
-    cam_wrist = pull(T * 3 * H * W).reshape(T, 3, H, W)
+    # 6. camera_image: T * 3 * H * W
+    cam = pull(T * 3 * H * W).reshape(T, 3, H, W)
 
     def to_tensor(arr):
         return torch.tensor(arr, dtype=torch.float32, 

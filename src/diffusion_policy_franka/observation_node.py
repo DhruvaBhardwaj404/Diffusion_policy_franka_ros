@@ -136,8 +136,8 @@ class ObservationNode:
         self.urdf_path   = rospy.get_param("~urdf_path",    URDF_PATH)
         self.ee_link     = rospy.get_param("~ee_link",      EE_LINK_NAME)
 
-        self.cam1_topic  = rospy.get_param("~cam1_topic", "/ext/color/image_raw")  #temporary fix because policy trained on switched labels
-        self.cam2_topic  = rospy.get_param("~cam2_topic", "/eih/color/image_raw")
+        self.cam1_topic  = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
+        self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
 
         # ── FK model (Polymetis Pinocchio — same as converter) ────────────────
         rospy.loginfo(f"[ObsNode] Loading Pinocchio model: {self.urdf_path} (ee: {self.ee_link})")
@@ -289,8 +289,8 @@ class ObservationNode:
 
     def timer_callback(self, event=None):
         with self.snap_lock:
-            img1    = self.latest_image_1
-            img2    = self.latest_image_2
+            img1    = self.latest_image_1   #EIH
+            img2    = self.latest_image_2   #EXT
             joints  = self.latest_joints
             gripper = self.latest_gripper
 
@@ -322,8 +322,8 @@ class ObservationNode:
 
         # ── append to rolling buffers ──────────────────────────────────────
         with self.buf_lock:
-            self.buf_cam1.append(proc_img1)
-            self.buf_cam2.append(proc_img2)
+            self.buf_cam1.append(proc_img1)  #EIH
+            self.buf_cam2.append(proc_img2)  #EXT
             self.buf_eef_pos.append(norm_pos)
             self.buf_eef_euler.append(norm_euler)
             self.buf_eef_quat.append(quat)
