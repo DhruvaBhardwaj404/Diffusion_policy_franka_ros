@@ -88,8 +88,7 @@ def preprocess_image(bgr_img: np.ndarray) -> np.ndarray:
     """
     resized = cv2.resize(bgr_img, (DESIRED_W, DESIRED_H),
                          interpolation=cv2.INTER_AREA)
-    # rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    rgb = resized
+    rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     chw     = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))
     return chw   # (3, DESIRED_H, DESIRED_W)
 
@@ -209,29 +208,6 @@ class ObservationNode:
 
     # ── Polymetis polling loop ─────────────────────────────────────────────────
 
-    # def _polymetis_poll_loop(self):
-    #     """
-    #     Polls Polymetis at poll_hz for joint positions and gripper width.
-    #     gripper.get_state().width → total width → split /2 per finger
-    #     """
-    #     rate = 1.0 / self.poll_hz
-    #     while not rospy.is_shutdown():
-    #         try:
-    #             joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
-
-    #             gripper_state = self.poly_gripper.get_state()
-    #             per_finger    = float(gripper_state.width) / 2.0
-    #             gripper       = np.array([per_finger, per_finger], dtype=np.float64)
-
-    #             with self.snap_lock:
-    #                 self.latest_joints  = joints
-    #                 self.latest_gripper = gripper
-
-    #         except Exception as e:
-    #             rospy.logerr_throttle(2.0, f"[ObsNode] Polymetis poll error: {e}")
-
-    #         rospy.sleep(rate)
-
     def _polymetis_poll_loop(self):
         """
         Polls Polymetis at poll_hz for joint positions and gripper width.
@@ -308,15 +284,8 @@ class ObservationNode:
 
         # ── preprocess — matches converter exactly ─────────────────────────
         proc_img1                    = preprocess_image(img1)   # BGR input
-
-        # debug_img = (proc_img1.transpose(1, 2, 0) * 255).astype(np.uint8)
-        # cv2.imshow("Debug Cam1 (Model Input)", cv2.cvtColor(debug_img, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(1)
         proc_img2                    = preprocess_image(img2)   # BGR input
 
-        # debug_img = (proc_img2.transpose(1, 2, 0) * 255).astype(np.uint8)
-        # cv2.imshow("Debug Cam1 (Model Input)", cv2.cvtColor(debug_img, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(1)
 
         norm_pos, norm_euler, quat   = joints_to_eef(self.robot_model, joints)
         norm_gripper                 = normalize_gripper(gripper.astype(np.float32))
@@ -355,13 +324,13 @@ class ObservationNode:
             cam1      = np.stack(list(self.buf_cam1),      axis=0)  # (T,3,H,W)
             cam2      = np.stack(list(self.buf_cam2),      axis=0)  # (T,3,H,W)
             eef_pos   = np.stack(list(self.buf_eef_pos),   axis=0)  # (T,3)
-            eef_euler = np.stack(list(self.buf_eef_euler), axis=0)  # (T,3)
+            # eef_euler = np.stack(list(self.buf_eef_euler), axis=0)  # (T,3)
             eef_quat  = np.stack(list(self.buf_eef_quat),  axis=0)  # (T,4)
             gripper   = np.stack(list(self.buf_gripper),   axis=0)  # (T,2)
 
         data = np.concatenate([
             eef_pos.flatten(),
-            eef_euler.flatten(),
+            # eef_euler.flatten(),
             eef_quat.flatten(),
             gripper.flatten(),
             cam1.flatten(),
@@ -377,22 +346,24 @@ class ObservationNode:
         self.obs_pub.publish(msg)
 
     def spin(self):
-        rate = rospy.Rate(10)
-        while not rospy.is_shutdown():
-            with self.buf_lock:
-                if len(self.buf_cam1) > 0:
-                    chw = list(self.buf_cam1)[-1]  # latest frame
-                    hwc = np.transpose(chw, (1, 2, 0))  # CHW → HWC
-                    cv2.imshow("cam1", hwc)
-                if len(self.buf_cam2) > 0:
-                    chw = list(self.buf_cam2)[-1]
-                    hwc = np.transpose(chw, (1, 2, 0))
-                    cv2.imshow("cam2", hwc)
+        rospy.spin()
 
-            cv2.waitKey(1)  # must be called in same thread as imshow
-            rate.sleep()
-
-        cv2.destroyAllWindows()
+        # rate = rospy.Rate(10)
+        # while not rospy.is_shutdown():
+        #     with self.buf_lock:
+        #         if len(self.buf_cam1) > 0:
+        #             chw = list(self.buf_cam1)[-1]  # latest frame
+        #             hwc = np.transpose(chw, (1, 2, 0))  # CHW → HWC
+        #             cv2.imshow("cam1", hwc)
+        #         if len(self.buf_cam2) > 0:
+        #             chw = list(self.buf_cam2)[-1]
+        #             hwc = np.transpose(chw, (1, 2, 0))
+        #             cv2.imshow("cam2", hwc)
+        #
+        #     cv2.waitKey(1)
+        #     rate.sleep()
+        #
+        # cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
