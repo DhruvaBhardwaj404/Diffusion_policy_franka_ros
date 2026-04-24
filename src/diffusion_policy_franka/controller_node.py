@@ -153,32 +153,34 @@ class SimGripper:
 
 
 # ── Franka controller process ─────────────────────────────────────────────────
-
 class FrankaController(mp.Process):
-    def __init__(self, command_queue: mp.Queue, robot_ip: str,
+    def __init__(self, command_queue: mp.Queue, robot_ip: str, mode: str,  # Added mode
                  interp_hz: float = 200.0, max_pos_speed: float = 0.25,
                  max_rot_speed: float = 0.6, verbose: bool = False):
         super().__init__(daemon=True)
         self.command_queue = command_queue
-        self.robot_ip      = robot_ip
-        self.interp_hz     = interp_hz
+        self.robot_ip = robot_ip
+        self.mode = mode  # Store mode
+        self.interp_hz = interp_hz
         self.max_pos_speed = max_pos_speed
         self.max_rot_speed = max_rot_speed
-        self.verbose       = verbose
-        self.ready_event   = mp.Event()
+        self.verbose = verbose
+        self.ready_event = mp.Event()
 
     def run(self):
         try:
             print(f"[FrankaController] Connecting to Polymetis @ {self.robot_ip} ...")
             robot = RobotInterface(ip_address=self.robot_ip)
 
-            #HOME_JOINTS = torch.tensor([0.2738, -0.3285, -0.0257, -2.4625, 0.0264, 2.3204, 1.1224], dtype=torch.float32)
-            #robot.move_to_joint_positions(HOME_JOINTS, time_to_go=10.0)
+            # Initialize Gripper inside the process
+            if self.mode == "sim":
+                gripper_provider = SimGripper()
+            else:
+                gripper_provider = HardwareGripper(robot_ip=self.robot_ip)
 
             state = robot.get_ee_pose()
             pos0 = state[0].numpy()
-            q_wxyz = state[1].numpy()
-            q_xyzw = np.array([q_wxyz[1], q_wxyz[2], q_wxyz[3], q_wxyz[0]])
+            q_xyzw = state[1].numpy()
             rotvec0 = Rotation.from_quat(q_xyzw).as_rotvec()
             pose0 = np.concatenate([pos0, rotvec0])
 
@@ -186,15 +188,14 @@ class FrankaController(mp.Process):
             mono_wall_offset = time.monotonic() - time.time()
 
             interp = PoseTrajectoryInterpolator(times=[t0], poses=[pose0])
-            dt = 1.0 / self.interp_hz
+            gripper_tasks = []  # Track (monotonic_time, state)
 
+            dt = 1.0 / self.interp_hz
             robot.start_cartesian_impedance()
             self.ready_event.set()
-            print(f"[FrankaController] Running at {self.interp_hz} Hz")
 
             while True:
                 t_now = time.monotonic()
-                last_waypoint_time = interp.times[-1]
 
                 while not self.command_queue.empty():
                     try:
@@ -203,60 +204,47 @@ class FrankaController(mp.Process):
                         break
 
                     if cmd['cmd'] == Command.STOP.value:
-                        print("[FrankaController] STOP — exiting.")
                         robot.terminate_current_policy()
                         return
 
                     elif cmd['cmd'] == Command.SCHEDULE_WAYPOINT.value:
-                        target_pose = np.array(cmd['pose'])   # (7,) xyz+xyzw
-                        target_time = float(cmd['time'])
+                        target_pose = np.array(cmd['pose'])
+                        target_time_mono = mono_wall_offset + float(cmd['time'])
 
-                        # ── BBOX: secondary guard inside the controller process ──
-                        accepted, target_pose = check_pose_bbox(target_pose, label="ctrl")
-                        if not accepted:
-                            continue  # skip mode: drop this waypoint silently
-                        # ────────────────────────────────────────────────────────
+                        gripper_tasks.append((target_time_mono, cmd['gripper']))
 
-                        target_time_mono = mono_wall_offset + target_time
-
-                        t_pos    = target_pose[:3]
+                        t_pos = target_pose[:3]
                         t_rotvec = Rotation.from_quat(target_pose[3:]).as_rotvec()
-                        t_pose6  = np.concatenate([t_pos, t_rotvec])
-
                         interp = interp.schedule_waypoint(
-                            pose=t_pose6,
+                            pose=np.concatenate([t_pos, t_rotvec]),
                             time=target_time_mono,
                             max_pos_speed=self.max_pos_speed,
                             max_rot_speed=self.max_rot_speed,
                             curr_time=t_now,
-                            last_waypoint_time=last_waypoint_time,
+                            last_waypoint_time=interp.times[-1],
                         )
-                        last_waypoint_time = interp.times[-1]
+
+                while gripper_tasks and t_now >= gripper_tasks[0][0]:
+                    _, g_state = gripper_tasks.pop(0)
+                    threading.Thread(
+                        target=gripper_provider.command,
+                        args=(g_state,),
+                        daemon=True
+                    ).start()
 
                 pose_now = interp(t_now)
-                pos    = pose_now[:3]
-                rotvec = pose_now[3:]
-
-                q_xyzw = Rotation.from_rotvec(rotvec).as_quat()
-                q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
-                #print("next",pos,rotvec)
+                q_xyzw_now = Rotation.from_rotvec(pose_now[3:]).as_quat()
                 robot.update_desired_ee_pose(
-                    position=torch.tensor(pos, dtype=torch.float32),
-                    orientation=torch.tensor(q_wxyz, dtype=torch.float32),
+                    position=torch.tensor(pose_now[:3], dtype=torch.float32),
+                    orientation=torch.tensor(q_xyzw_now, dtype=torch.float32),
                 )
-
-                if self.verbose:
-                    print(f"[FrankaController] pos={np.round(pos, 4)}")
 
                 elapsed = time.monotonic() - t_now
                 time.sleep(max(0.0, dt - elapsed))
 
         except Exception as e:
             print(f"[FrankaController] CRASHED: {e}")
-            import traceback
-            traceback.print_exc()
             self.ready_event.set()
-
 
 # ── ROS controller node ───────────────────────────────────────────────────────
 
@@ -309,22 +297,17 @@ class ControllerNode:
         self.franka = FrankaController(
             command_queue=self.command_queue,
             robot_ip=effective_ip,
+            mode=mode,
             interp_hz=interp_hz,
             max_pos_speed=max_pos_speed,
             max_rot_speed=max_rot_speed,
             verbose=verbose,
         )
+
         self.franka.start()
         rospy.loginfo("[ControllerNode] Waiting for FrankaController ...")
         self.franka.ready_event.wait()
         rospy.loginfo("[ControllerNode] FrankaController ready ✓")
-
-        if mode == "sim":
-            self.gripper = SimGripper()
-        else:
-            self.gripper = HardwareGripper(robot_ip=robot_ip)
-
-        self.gripper.command(1)
 
         rospy.Subscriber(
             "/diffusion_policy/action_chunk",
@@ -373,18 +356,25 @@ class ControllerNode:
                 continue  # skip mode: don't queue this waypoint
             # ─────────────────────────────────────────────────────────────────
 
+            # self.command_queue.put({
+            #     'cmd':  Command.SCHEDULE_WAYPOINT.value,
+            #     'pose': safe_pose.tolist(),
+            #     'time': float(timestamps[i]),
+            # })
+
             self.command_queue.put({
-                'cmd':  Command.SCHEDULE_WAYPOINT.value,
+                'cmd': Command.SCHEDULE_WAYPOINT.value,
                 'pose': safe_pose.tolist(),
                 'time': float(timestamps[i]),
+                'gripper': 1 if gripper[i] > 0 else 0
             })
 
-        rate = rospy.Rate(self.action_hz)
-        for i in range(n_steps):
-            if rospy.is_shutdown():
-                break
-            self.gripper.command(1 if gripper[i] > 0 else 0)
-            rate.sleep()
+        # rate = rospy.Rate(self.action_hz)
+        # for i in range(n_steps):
+        #     if rospy.is_shutdown():
+        #         break
+        #     self.gripper.command(1 if gripper[i] > 0 else 0)
+        #     rate.sleep()
 
     def spin(self):
         rospy.spin()
