@@ -137,7 +137,7 @@ class ObservationNode:
         self.ee_link     = rospy.get_param("~ee_link",      EE_LINK_NAME)
 
         self.cam1_topic  = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
-        self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
+        #self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
 
         # ── FK model (Polymetis Pinocchio — same as converter) ────────────────
         rospy.loginfo(f"[ObsNode] Loading Pinocchio model: {self.urdf_path} (ee: {self.ee_link})")
@@ -159,7 +159,7 @@ class ObservationNode:
 
         # ── rolling obs buffers ───────────────────────────────────────────────
         self.buf_cam1      = deque(maxlen=self.n_obs_steps)
-        self.buf_cam2      = deque(maxlen=self.n_obs_steps)
+        #self.buf_cam2      = deque(maxlen=self.n_obs_steps)
         self.buf_eef_pos   = deque(maxlen=self.n_obs_steps)
         self.buf_eef_euler = deque(maxlen=self.n_obs_steps)
         self.buf_eef_quat  = deque(maxlen=self.n_obs_steps)
@@ -178,8 +178,8 @@ class ObservationNode:
         # ── camera subscribers (bgr8 — matches data collector exactly) ────────
         rospy.Subscriber(self.cam1_topic, Image,
                          self.cam1_callback, queue_size=1, buff_size=2**24)
-        rospy.Subscriber(self.cam2_topic, Image,
-                         self.cam2_callback, queue_size=1, buff_size=2**24)
+        # rospy.Subscriber(self.cam2_topic, Image,
+        #                  self.cam2_callback, queue_size=1, buff_size=2**24)
 
         # ── Polymetis polling thread ──────────────────────────────────────────
         self._poly_thread = threading.Thread(
@@ -203,7 +203,7 @@ class ObservationNode:
             f"  urdf        : {self.urdf_path}\n"
             f"  ee_link     : {self.ee_link}\n"
             f"  cam1 (wrist)   : {self.cam1_topic}\n"
-            f"  cam2 (external): {self.cam2_topic}"
+            #f"  cam2 (external): {self.cam2_topic}"
         )
 
     # ── Polymetis polling loop ─────────────────────────────────────────────────
@@ -253,30 +253,30 @@ class ObservationNode:
         except CvBridgeError as e:
             rospy.logerr(f"[ObsNode] cam1 error: {e}")
 
-    def cam2_callback(self, msg: Image):
-        try:
-            bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")   # force BGR like data collector
-            if bgr is not None and bgr.size > 0:
-                with self.snap_lock:
-                    self.latest_image_2 = np.array(bgr, dtype=np.uint8)
-        except CvBridgeError as e:
-            rospy.logerr(f"[ObsNode] cam2 error: {e}")
+    # def cam2_callback(self, msg: Image):
+    #     try:
+    #         bgr = self.bridge.imgmsg_to_cv2(msg, "bgr8")   # force BGR like data collector
+    #         if bgr is not None and bgr.size > 0:
+    #             with self.snap_lock:
+    #                 self.latest_image_2 = np.array(bgr, dtype=np.uint8)
+    #     except CvBridgeError as e:
+    #         rospy.logerr(f"[ObsNode] cam2 error: {e}")
 
     # ── core loop ─────────────────────────────────────────────────────────────
 
     def timer_callback(self, event=None):
         with self.snap_lock:
             img1    = self.latest_image_1   #EIH
-            img2    = self.latest_image_2   #EXT
+            # img2    = self.latest_image_2   #EXT
             joints  = self.latest_joints
             gripper = self.latest_gripper
 
-        if any(v is None for v in [img1, img2, joints, gripper]):
+        if any(v is None for v in [img1,joints, gripper]):
             rospy.logwarn_throttle(
                 2.0,
                 f"[ObsNode] Waiting for sensors: "
                 f"cam1={'ok' if img1 is not None else 'MISSING'} "
-                f"cam2={'ok' if img2 is not None else 'MISSING'} "
+                # f"cam2={'ok' if img2 is not None else 'MISSING'} "
                 f"joints={'ok' if joints is not None else 'MISSING'} "
                 f"gripper={'ok' if gripper is not None else 'MISSING'}"
             )
@@ -284,7 +284,7 @@ class ObservationNode:
 
         # ── preprocess — matches converter exactly ─────────────────────────
         proc_img1                    = preprocess_image(img1)   # BGR input
-        proc_img2                    = preprocess_image(img2)   # BGR input
+        # proc_img2                    = preprocess_image(img2)   # BGR input
 
 
         norm_pos, norm_euler, quat   = joints_to_eef(self.robot_model, joints)
@@ -293,7 +293,7 @@ class ObservationNode:
         # ── append to rolling buffers ──────────────────────────────────────
         with self.buf_lock:
             self.buf_cam1.append(proc_img1)  #EIH
-            self.buf_cam2.append(proc_img2)  #EXT
+            # self.buf_cam2.append(proc_img2)  #EXT
             self.buf_eef_pos.append(norm_pos)
             self.buf_eef_euler.append(norm_euler)
             self.buf_eef_quat.append(quat)
@@ -322,7 +322,7 @@ class ObservationNode:
         """
         with self.buf_lock:
             cam1      = np.stack(list(self.buf_cam1),      axis=0)  # (T,3,H,W)
-            cam2      = np.stack(list(self.buf_cam2),      axis=0)  # (T,3,H,W)
+            # cam2      = np.stack(list(self.buf_cam2),      axis=0)  # (T,3,H,W)
             eef_pos   = np.stack(list(self.buf_eef_pos),   axis=0)  # (T,3)
             # eef_euler = np.stack(list(self.buf_eef_euler), axis=0)  # (T,3)
             eef_quat  = np.stack(list(self.buf_eef_quat),  axis=0)  # (T,4)
@@ -334,7 +334,7 @@ class ObservationNode:
             eef_quat.flatten(),
             gripper.flatten(),
             cam1.flatten(),
-            cam2.flatten(),
+            # cam2.flatten(),
         ]).astype(np.float32)
 
         msg = Float64MultiArray()

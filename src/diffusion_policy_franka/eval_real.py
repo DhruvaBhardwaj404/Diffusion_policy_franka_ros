@@ -70,8 +70,6 @@ def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
     # 5. camera_wrist_image: T * 3 * H * W
     cam_wrist       = pull(T * 3 * H * W).reshape(T, 3, H, W)
     
-    # 6. camera_image: T * 3 * H * W
-    cam = pull(T * 3 * H * W).reshape(T, 3, H, W)
 
     def to_tensor(arr):
         return torch.tensor(arr, dtype=torch.float32, 
@@ -81,7 +79,6 @@ def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
         "robot0_eef_pos":         to_tensor(eef_pos),
         "robot0_eef_quat":        to_tensor(eef_quat),
         "robot0_eef_gpos":        to_tensor(gripper),
-        "camera_image":           to_tensor(cam),
         "camera_wrist_image":     to_tensor(cam_wrist),
     }
 
