@@ -200,7 +200,7 @@ class ObservationNode:
             f"  publish_hz  : {self.publish_hz}\n"
             f"  poll_hz     : {self.poll_hz}\n"
             #f"  robot_ip    : {self.robot_ip}\n"
-            f"  urdf        : {self.urdf_path}\n"
+            #f"  urdf        : {self.urdf_path}\n"
             f"  ee_link     : {self.ee_link}\n"
             f"  cam1 (wrist)   : {self.cam1_topic}\n"
             #f"  cam2 (external): {self.cam2_topic}"
