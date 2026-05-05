@@ -56,16 +56,16 @@ def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
         return chunk
 
     # 1. eef_pos: T * 3
-    eef_pos   = pull(T * 3).reshape(T, 3)
+    # eef_pos   = pull(T * 3).reshape(T, 3)
     
     # # 2. eef_euler: T * 3 (This was missing in your original code!)
     # eef_euler = pull(T * 3).reshape(T, 3)
     
     # 3. eef_quat: T * 4
-    eef_quat  = pull(T * 4).reshape(T, 4)
+    # eef_quat  = pull(T * 4).reshape(T, 4)
     
     # 4. eef_gpos (gripper): T * 2
-    gripper   = pull(T * 2).reshape(T, 2)
+    # gripper   = pull(T * 2).reshape(T, 2)
     
     # 5. camera_wrist_image: T * 3 * H * W
     cam_wrist       = pull(T * 3 * H * W).reshape(T, 3, H, W)
@@ -76,9 +76,9 @@ def flat_msg_to_obs_dict(msg, n_obs_steps: int, device: str) -> dict:
                             device=device).unsqueeze(0)  # Add Batch Dim (1, T, ...)
 
     return {
-        "robot0_eef_pos":         to_tensor(eef_pos),
-        "robot0_eef_quat":        to_tensor(eef_quat),
-        "robot0_eef_gpos":        to_tensor(gripper),
+        # "robot0_eef_pos":         to_tensor(eef_pos),
+        # "robot0_eef_quat":        to_tensor(eef_quat),
+        # "robot0_eef_gpos":        to_tensor(gripper),
         "camera_wrist_image":     to_tensor(cam_wrist),
     }
 

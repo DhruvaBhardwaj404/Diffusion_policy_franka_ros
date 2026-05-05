@@ -131,39 +131,39 @@ class ObservationNode:
         # ── params ────────────────────────────────────────────────────────────
         self.n_obs_steps = rospy.get_param("~n_obs_steps",  2)
         self.publish_hz  = rospy.get_param("~publish_hz",   10)
-        self.robot_ip    = rospy.get_param("~robot_ip",     "10.42.0.1")
+        # self.robot_ip    = rospy.get_param("~robot_ip",     "10.42.0.1")
         self.poll_hz     = rospy.get_param("~poll_hz",      100)
-        self.urdf_path   = rospy.get_param("~urdf_path",    URDF_PATH)
+        # self.urdf_path   = rospy.get_param("~urdf_path",    URDF_PATH)
         self.ee_link     = rospy.get_param("~ee_link",      EE_LINK_NAME)
 
         self.cam1_topic  = rospy.get_param("~cam1_topic", "/eih/color/image_raw")
         #self.cam2_topic  = rospy.get_param("~cam2_topic", "/ext/color/image_raw")
 
         # ── FK model (Polymetis Pinocchio — same as converter) ────────────────
-        rospy.loginfo(f"[ObsNode] Loading Pinocchio model: {self.urdf_path} (ee: {self.ee_link})")
-        self.robot_model = RobotModelPinocchio(self.urdf_path, self.ee_link)
-        rospy.loginfo("[ObsNode] FK model ready ✓")
+        # rospy.loginfo(f"[ObsNode] Loading Pinocchio model: {self.urdf_path} (ee: {self.ee_link})")
+        # self.robot_model = RobotModelPinocchio(self.urdf_path, self.ee_link)
+        # rospy.loginfo("[ObsNode] FK model ready ✓")
 
         # ── connect to Polymetis ──────────────────────────────────────────────
-        rospy.loginfo(f"[ObsNode] Connecting to Polymetis @ {self.robot_ip} ...")
-        self.poly_robot   = RobotInterface(ip_address=self.robot_ip)
-        self.poly_gripper = GripperInterface(ip_address=self.robot_ip)
-        rospy.loginfo("[ObsNode] Polymetis connected ✓")
+        # rospy.loginfo(f"[ObsNode] Connecting to Polymetis @ {self.robot_ip} ...")
+        # self.poly_robot   = RobotInterface(ip_address=self.robot_ip)
+        # self.poly_gripper = GripperInterface(ip_address=self.robot_ip)
+        # rospy.loginfo("[ObsNode] Polymetis connected ✓")
 
         # ── latest snapshots ──────────────────────────────────────────────────
         self.latest_image_1  = None   # (H, W, 3) uint8 BGR
-        self.latest_image_2  = None   # (H, W, 3) uint8 BGR
-        self.latest_joints   = None   # (7,) float64
-        self.latest_gripper  = None   # (2,) float64 per-finger positions
+        # self.latest_image_2  = None   # (H, W, 3) uint8 BGR
+        # self.latest_joints   = None   # (7,) float64
+        # self.latest_gripper  = None   # (2,) float64 per-finger positions
         self.snap_lock       = threading.Lock()
 
         # ── rolling obs buffers ───────────────────────────────────────────────
         self.buf_cam1      = deque(maxlen=self.n_obs_steps)
         #self.buf_cam2      = deque(maxlen=self.n_obs_steps)
-        self.buf_eef_pos   = deque(maxlen=self.n_obs_steps)
-        self.buf_eef_euler = deque(maxlen=self.n_obs_steps)
-        self.buf_eef_quat  = deque(maxlen=self.n_obs_steps)
-        self.buf_gripper   = deque(maxlen=self.n_obs_steps)
+        # self.buf_eef_pos   = deque(maxlen=self.n_obs_steps)
+        # self.buf_eef_euler = deque(maxlen=self.n_obs_steps)
+        # self.buf_eef_quat  = deque(maxlen=self.n_obs_steps)
+        # self.buf_gripper   = deque(maxlen=self.n_obs_steps)
         self.buf_lock      = threading.Lock()
 
         self.bridge = CvBridge()
@@ -182,11 +182,11 @@ class ObservationNode:
         #                  self.cam2_callback, queue_size=1, buff_size=2**24)
 
         # ── Polymetis polling thread ──────────────────────────────────────────
-        self._poly_thread = threading.Thread(
-            target=self._polymetis_poll_loop, daemon=True
-        )
-        self._poly_thread.start()
-        rospy.loginfo("[ObsNode] Polymetis poll thread started ✓")
+        # self._poly_thread = threading.Thread(
+        #     target=self._polymetis_poll_loop, daemon=True
+        # )
+        # self._poly_thread.start()
+        # rospy.loginfo("[ObsNode] Polymetis poll thread started ✓")
 
         # ── snapshot → buffer timer ───────────────────────────────────────────
         self.timer = rospy.Timer(
@@ -208,39 +208,39 @@ class ObservationNode:
 
     # ── Polymetis polling loop ─────────────────────────────────────────────────
 
-    def _polymetis_poll_loop(self):
-        """
-        Polls Polymetis at poll_hz for joint positions and gripper width.
-        If the gripper server is missing (common in sim), mocks the gripper open state.
-        """
-        rate = 1.0 / self.poll_hz
-        while not rospy.is_shutdown():
-            
-            # 1. Try to get arm joints
-            try:
-                joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
-            except Exception as e:
-                rospy.logerr_throttle(2.0, f"[ObsNode] ARM poll error: {e}")
-                rospy.sleep(rate)
-                continue  # Skip updating if we don't have arm joints
-
-            # 2. Try to get gripper state
-            try:
-                gripper_state = self.poly_gripper.get_state()
-                per_finger    = float(gripper_state.width) / 2.0
-                gripper       = np.array([per_finger, per_finger], dtype=np.float64)
-            except Exception as e:
-                rospy.logwarn_throttle(5.0, f"[ObsNode] GRIPPER poll error. Mocking open gripper. (Ignore if in sim)")
-                # Mock gripper as fully open for simulation
-                mock_finger = ROBOT_FINGER_OPEN / 2.0
-                gripper     = np.array([mock_finger, mock_finger], dtype=np.float64)
-
-            # 3. Update buffers
-            with self.snap_lock:
-                self.latest_joints  = joints
-                self.latest_gripper = gripper
-
-            rospy.sleep(rate)
+    # def _polymetis_poll_loop(self):
+    #     """
+    #     Polls Polymetis at poll_hz for joint positions and gripper width.
+    #     If the gripper server is missing (common in sim), mocks the gripper open state.
+    #     """
+    #     rate = 1.0 / self.poll_hz
+    #     while not rospy.is_shutdown():
+    #
+    #         # 1. Try to get arm joints
+    #         try:
+    #             joints = self.poly_robot.get_joint_positions().numpy()  # (7,)
+    #         except Exception as e:
+    #             rospy.logerr_throttle(2.0, f"[ObsNode] ARM poll error: {e}")
+    #             rospy.sleep(rate)
+    #             continue  # Skip updating if we don't have arm joints
+    #
+    #         # 2. Try to get gripper state
+    #         try:
+    #             gripper_state = self.poly_gripper.get_state()
+    #             per_finger    = float(gripper_state.width) / 2.0
+    #             gripper       = np.array([per_finger, per_finger], dtype=np.float64)
+    #         except Exception as e:
+    #             rospy.logwarn_throttle(5.0, f"[ObsNode] GRIPPER poll error. Mocking open gripper. (Ignore if in sim)")
+    #             # Mock gripper as fully open for simulation
+    #             mock_finger = ROBOT_FINGER_OPEN / 2.0
+    #             gripper     = np.array([mock_finger, mock_finger], dtype=np.float64)
+    #
+    #         # 3. Update buffers
+    #         with self.snap_lock:
+    #             self.latest_joints  = joints
+    #             self.latest_gripper = gripper
+    #
+    #         rospy.sleep(rate)
 
     # ── camera callbacks — force bgr8 to match data collector ─────────────────
 
@@ -268,18 +268,18 @@ class ObservationNode:
         with self.snap_lock:
             img1    = self.latest_image_1   #EIH
             # img2    = self.latest_image_2   #EXT
-            joints  = self.latest_joints
-            gripper = self.latest_gripper
+            # joints  = self.latest_joints
+            # gripper = self.latest_gripper
 
-        if any(v is None for v in [img1,joints, gripper]):
+        if any(v is None for v in [img1]):
             rospy.logwarn_throttle(
                 2.0,
                 f"[ObsNode] Waiting for sensors: "
                 f"cam1={'ok' if img1 is not None else 'MISSING'} "
                 # f"cam2={'ok' if img2 is not None else 'MISSING'} "
-                f"joints={'ok' if joints is not None else 'MISSING'} "
-                f"gripper={'ok' if gripper is not None else 'MISSING'}"
-            )
+            #     f"joints={'ok' if joints is not None else 'MISSING'} "
+            #     f"gripper={'ok' if gripper is not None else 'MISSING'}"
+             )
             return
 
         # ── preprocess — matches converter exactly ─────────────────────────
@@ -287,17 +287,17 @@ class ObservationNode:
         # proc_img2                    = preprocess_image(img2)   # BGR input
 
 
-        norm_pos, norm_euler, quat   = joints_to_eef(self.robot_model, joints)
-        norm_gripper                 = normalize_gripper(gripper.astype(np.float32))
+        # norm_pos, norm_euler, quat   = joints_to_eef(self.robot_model, joints)
+        # norm_gripper                 = normalize_gripper(gripper.astype(np.float32))
 
         # ── append to rolling buffers ──────────────────────────────────────
         with self.buf_lock:
             self.buf_cam1.append(proc_img1)  #EIH
             # self.buf_cam2.append(proc_img2)  #EXT
-            self.buf_eef_pos.append(norm_pos)
-            self.buf_eef_euler.append(norm_euler)
-            self.buf_eef_quat.append(quat)
-            self.buf_gripper.append(norm_gripper)
+            # self.buf_eef_pos.append(norm_pos)
+            # self.buf_eef_euler.append(norm_euler)
+            # self.buf_eef_quat.append(quat)
+            # self.buf_gripper.append(norm_gripper)
             buf_len = len(self.buf_cam1)
 
         if buf_len < self.n_obs_steps:
@@ -323,16 +323,16 @@ class ObservationNode:
         with self.buf_lock:
             cam1      = np.stack(list(self.buf_cam1),      axis=0)  # (T,3,H,W)
             # cam2      = np.stack(list(self.buf_cam2),      axis=0)  # (T,3,H,W)
-            eef_pos   = np.stack(list(self.buf_eef_pos),   axis=0)  # (T,3)
+            # eef_pos   = np.stack(list(self.buf_eef_pos),   axis=0)  # (T,3)
             # eef_euler = np.stack(list(self.buf_eef_euler), axis=0)  # (T,3)
-            eef_quat  = np.stack(list(self.buf_eef_quat),  axis=0)  # (T,4)
-            gripper   = np.stack(list(self.buf_gripper),   axis=0)  # (T,2)
+            # eef_quat  = np.stack(list(self.buf_eef_quat),  axis=0)  # (T,4)
+            # gripper   = np.stack(list(self.buf_gripper),   axis=0)  # (T,2)
 
         data = np.concatenate([
-            eef_pos.flatten(),
+            # eef_pos.flatten(),
             # eef_euler.flatten(),
-            eef_quat.flatten(),
-            gripper.flatten(),
+            # eef_quat.flatten(),
+            # gripper.flatten(),
             cam1.flatten(),
             # cam2.flatten(),
         ]).astype(np.float32)
